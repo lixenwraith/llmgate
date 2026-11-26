@@ -172,39 +172,64 @@ func run(path string, check bool) error {
 	return err
 }
 
-// load is the defaults, then the file, then LLMGATE_ variables. A file key
-// that names no setting is refused: the library would drop it, and a
-// misspelt limit would quietly be the default.
+// load is the defaults, then the file, then LLMGATE_ variables. A key or a
+// variable that names no setting is refused: the library would drop it, and
+// a misspelt limit would quietly be the default. So is a value start would
+// refuse, so that -check passes only what starts.
 func load(path string) (Config, error) {
 	def := defaults()
-	c, err := config.NewBuilder().WithTarget(&def).WithFile(path).WithEnvPrefix("LLMGATE_").WithArgs(nil).Build()
+	c, err := config.NewBuilder().WithTarget(&def).WithFile(path).WithEnvPrefix(envPrefix).WithArgs(nil).Build()
 	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
-	if data, err := os.ReadFile(path); err == nil {
-		root, err := toml.NewParser(data).Parse()
-		if err != nil {
-			return Config{}, fmt.Errorf("%s: %w", path, err)
-		}
-		known := c.GetRegisteredPaths()
-		var unknown []string
-		for _, k := range paths(root, "") {
-			if !known[k] {
-				unknown = append(unknown, k)
-			}
-		}
-		if len(unknown) > 0 {
-			return Config{}, fmt.Errorf("%s: unknown keys %s", path, strings.Join(unknown, ", "))
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return Config{}, err
+	}
+	root, err := toml.NewParser(data).Parse()
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	known, vars := c.GetRegisteredPaths(), map[string]bool{}
+	for p := range known {
+		vars[envPrefix+strings.ToUpper(strings.ReplaceAll(p, ".", "_"))] = true // the library's own naming
+	}
+	var unknown []string
+	for _, k := range paths(root, "") {
+		if !known[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, envPrefix) && !vars[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		return Config{}, fmt.Errorf("%s: unknown keys %s", path, strings.Join(unknown, ", "))
 	}
 	v, err := c.AsStruct()
 	if err != nil {
 		return Config{}, err
 	}
-	return *v.(*Config), nil
+	cfg := *v.(*Config)
+	if _, ok := levels[cfg.Log.Level]; !ok {
+		return Config{}, fmt.Errorf("log.level %q: one of debug, info, warn, error", cfg.Log.Level)
+	}
+	if !slices.Contains([]string{"", "off", "on"}, cfg.Model.Think) {
+		return Config{}, fmt.Errorf("model.think %q: off, on or empty", cfg.Model.Think)
+	}
+	for name, d := range map[string]time.Duration{"model.health": cfg.Model.Health, "line.deadline": cfg.Line.Deadline, "line.heartbeat": cfg.Line.Heartbeat} {
+		if d <= 0 {
+			return Config{}, fmt.Errorf("%s %s: more than 0", name, d)
+		}
+	}
+	return cfg, nil
 }
+
+const envPrefix = "LLMGATE_"
+
+var levels = map[string]int64{"debug": log.LevelDebug, "info": log.LevelInfo, "warn": log.LevelWarn, "error": log.LevelError}
 
 // paths are a table's keys, dotted, sorted
 func paths(m map[string]any, prefix string) []string {
@@ -226,11 +251,7 @@ func logger(cfg Config, name string) (*log.Logger, error) {
 	c.Name, c.Directory, c.Format, c.Sanitization = name, cfg.Log.Directory, "json", log.PolicyRaw
 	c.EnableFile, c.EnableConsole = true, cfg.Log.Console
 	c.MaxSizeKB, c.MaxTotalSizeKB, c.RetentionPeriodHrs = cfg.Log.MaxSizeMB*1000, cfg.Log.MaxTotalMB*1000, cfg.Log.RetentionDays*24
-	level, ok := map[string]int64{"debug": log.LevelDebug, "info": log.LevelInfo, "warn": log.LevelWarn, "error": log.LevelError}[cfg.Log.Level]
-	if !ok {
-		return nil, fmt.Errorf("log.level %q: one of debug, info, warn, error", cfg.Log.Level)
-	}
-	c.Level = level
+	c.Level = levels[cfg.Log.Level]
 	l := log.NewLogger()
 	if err := l.ApplyConfig(c); err != nil {
 		return nil, fmt.Errorf("log %s: %w", name, err)

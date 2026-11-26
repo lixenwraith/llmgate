@@ -20,13 +20,13 @@ load_rc_config $name
 : ${llmgate_enable:="NO"}
 : ${llmgate_config:="/usr/local/etc/llmgate/llmgate.toml"}
 
-# Its own logs are in /var/log/llmgate; what it prints, a refusal to start
-# or a crash, goes to syslog. start checks the configuration first, so a bad
-# one fails here rather than in a restart loop.
-llmgate_user=llmgate
-pidfile=/var/run/llmgate/llmgate.pid
+# daemon(8) stays root and runs llmgate as llmgate, so the pidfile root reads
+# is root's. llmgate's own logs are in /var/log/llmgate; what it prints, a
+# refusal to start or a crash, goes to syslog. start checks the configuration
+# first, so a bad one fails here rather than in a restart loop.
+pidfile=/var/run/llmgate.pid
 command=/usr/sbin/daemon
-command_args="-r -R 5 -S -T ${name} -P ${pidfile} -t ${name} /usr/local/bin/llmgate -c ${llmgate_config}"
+command_args="-r -R 5 -S -T ${name} -u llmgate -P ${pidfile} -t ${name} /usr/local/bin/llmgate -c ${llmgate_config}"
 required_files=${llmgate_config}
 start_precmd=llmgate_prestart
 extra_commands=check
@@ -34,7 +34,7 @@ check_cmd=llmgate_check
 
 llmgate_prestart()
 {
-	install -d -o llmgate -g llmgate -m 0750 /var/run/llmgate /var/log/llmgate
+	install -d -o llmgate -g llmgate -m 0750 /var/log/llmgate
 	llmgate_check
 }
 

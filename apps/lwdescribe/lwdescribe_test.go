@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lixenwraith/llmgate/gate"
 	"github.com/lixenwraith/llmgate/model"
 )
 
@@ -108,18 +109,71 @@ func fakeLW(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "lw")
-	script := `#!/bin/sh
-case "$1" in
+	return shLW(t, `case "$1" in
 --version) echo "test (commit: test)" ;;
---schema) exec /bin/cat '` + schema + `' ;;
+--schema) exec /bin/cat '`+schema+`' ;;
 --dump) case "$*" in *port=1,*) printf 'Error: Failed to load config: invalid configuration:\npipelines[0].sinks[0].port: 1 is not a port to listen on\n' >&2; exit 1 ;; esac ;;
-esac
-`
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+esac`)
+}
+
+// shLW writes an lw that is the shell script body
+func shLW(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "lw")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// Only lw's own refusal, exit 1 with its words, is a verdict on flags: a
+// silent failure, a crash or a kill is an error, never flags taken
+func TestOnlyLWsOwnRefusalIsAVerdict(t *testing.T) {
+	cfg := Defaults()
+	cfg.LW, cfg.Assets, cfg.WorkDir = fakeLW(t), assets, t.TempDir()
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := []string{"--pipeline 'a'", "--source 'console'", "--sink 'console'"}
+	for _, body := range []string{"exit 1", "echo 'panic: runtime error' >&2; exit 2", "exec sleep 5"} {
+		app.cfg.LW = shLW(t, body)
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		if p, err := app.dump(ctx, flags); err == nil {
+			t.Errorf("lw %q: problems %q and no error", body, p)
+		}
+		cancel()
+	}
+}
+
+// A draft the check refuses for a hidden character reaches the page and the
+// review log escaped, for no terminal to act on
+func TestAHiddenCharacterIsKeptEscaped(t *testing.T) {
+	cfg := Defaults()
+	cfg.LW, cfg.Assets, cfg.WorkDir = fakeLW(t), assets, t.TempDir()
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const draft = `{"flags":["--pipeline 'a'","--source 'console'","--sink 'file:directory=/tmp\u001b]0;x\u0007'"]}`
+	task, err := app.Take([]byte(`{"text":"stdin to a file"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := task.Run(context.Background(), &scripted{answers: []string{draft, draft}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := task.Record()
+	drafts, _ := rec["refused_drafts"].([]map[string]string)
+	if len(drafts) != 1 {
+		t.Fatalf("refused drafts %v", drafts)
+	}
+	for _, kept := range []string{out["flags"].(string), rec["flags"].(string), drafts[0]["flags"]} {
+		if strings.ContainsFunc(strings.ReplaceAll(kept, "\n", ""), gate.Hidden) || !strings.Contains(kept, `\x1b`) {
+			t.Errorf("kept %q", kept)
+		}
+	}
 }
 
 // scripted answers each chat with its next answer and keeps the requests
@@ -134,7 +188,7 @@ func (s *scripted) Chat(ctx context.Context, r model.Request) (model.Answer, err
 	s.got = append(s.got, r)
 	a := s.answers[0]
 	s.answers = s.answers[1:]
-	return model.Answer{Content: a, PromptTokens: 100, AnswerTokens: 20, Took: time.Second}, nil
+	return model.Answer{Content: a, PromptTokens: 100, AnswerTokens: 20}, nil
 }
 
 func TestRunRepairsWithLWsWordsThenGivesUp(t *testing.T) {

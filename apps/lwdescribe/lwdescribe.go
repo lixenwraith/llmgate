@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -202,7 +203,7 @@ func (a *App) Take(body []byte) (gate.Task, error) {
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
+	if err := dec.Decode(&in); err != nil || dec.More() {
 		return nil, &gate.Refusal{Status: http.StatusBadRequest, Code: "invalid_request"}
 	}
 	text, err := gate.Clean(in.Text, a.cfg.MaxChars, a.cfg.MaxLines)
@@ -251,10 +252,17 @@ func (t *task) Run(ctx context.Context, m model.Model) (map[string]any, error) {
 			return nil, fmt.Errorf("answer: %w", err)
 		}
 		if len(out.Flags) == 0 {
-			t.declined = true
+			t.declined, t.flags, t.problems = true, nil, ""
 			return map[string]any{"declined": true}, nil
 		}
-		t.flags = out.Flags
+		// a draft the check refuses for a hidden character is kept escaped, so
+		// neither the page nor a terminal reading the review log acts on it
+		t.flags = slices.Clone(out.Flags)
+		for i, f := range t.flags {
+			if strings.ContainsFunc(f, gate.Hidden) {
+				t.flags[i] = strconv.QuoteToGraphic(f)
+			}
+		}
 		if t.problems = t.app.lang.check(out.Flags); t.problems == "" {
 			if t.problems, err = t.app.dump(ctx, out.Flags); err != nil {
 				return nil, err
@@ -301,7 +309,12 @@ func (a *App) lw(ctx context.Context, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
-	if _, exit := errors.AsType[*exec.ExitError](err); exit {
+	// only lw's own refusal, exit 1 with its words, is a verdict on the
+	// flags; a kill by the timeout or the request's end, or a crash, is not
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("lw: %w", ctx.Err())
+	}
+	if e, exit := errors.AsType[*exec.ExitError](err); exit && e.ExitCode() == 1 && stderr.Len() > 0 {
 		return stdout.String(), &lwError{strings.TrimSpace(stderr.String())}
 	}
 	return stdout.String(), err

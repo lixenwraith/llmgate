@@ -1,18 +1,26 @@
-# The llm jail: Ollama as llm, llmgate as llmgate, nologin users both. After
-# make jail, copied into Bastille's templates as llmgate/jail (README):
-#   bastille template llm llmgate/jail --arg NGINX_ADDR=ADDR
+# The llm jail, Bastille 1.4 or later: Ollama as llm, llmgate as llmgate,
+# nologin users both. After make jail, copied into Bastille's templates as
+# llmgate/jail (README): bastille template llm llmgate/jail --arg NGINX_ADDR=ADDR
 # NGINX_ADDR is nginx as the jail sees it: ipfw's one source for llmgate and
 # llmgate's one proxy. MODEL is pulled once, through the host's routing.
 ARG+ NGINX_ADDR
 ARG MODEL=qwen3:1.7b
+
+# The firewall first: a new VNET may drop everything until its rules load
+CP etc/ipfw.rules /etc/ipfw.rules
+RENDER /etc/ipfw.rules
+SYSRC firewall_enable=YES
+SYSRC firewall_script=/etc/ipfw.rules
+SERVICE ipfw restart
 
 PKG ollama
 CMD pw usershow llm >/dev/null 2>&1 || pw useradd llm -c "Local model server" -d /var/db/llm -s /usr/sbin/nologin -w no
 CMD pw usershow llmgate >/dev/null 2>&1 || pw useradd llmgate -c "Model gateway" -d /nonexistent -s /usr/sbin/nologin -w no
 
 # File by file: cp -a of a directory would give the checkout's owner and
-# modes to the jail's own /etc and /usr.
-CP etc/ipfw.rules /etc/ipfw.rules
+# modes to the jail's own /etc and /usr. llmgate is stopped first, as cp
+# cannot write over a running binary; the end starts it again.
+CMD service llmgate onestop >/dev/null 2>&1 || true
 CP usr/local/bin/llmgate /usr/local/bin/llmgate
 CP usr/local/bin/lw /usr/local/bin/lw
 CP usr/local/etc/rc.d/llm /usr/local/etc/rc.d/llm
@@ -23,14 +31,11 @@ CP usr/local/etc/llmgate/lwdescribe/prompt.md /usr/local/etc/llmgate/lwdescribe/
 CP usr/local/etc/llmgate/lwdescribe/examples.toml /usr/local/etc/llmgate/lwdescribe/examples.toml
 CP usr/local/etc/llmgate/lwdescribe/guide.md /usr/local/etc/llmgate/lwdescribe/guide.md
 CMD chown -R root:wheel /etc/ipfw.rules /usr/local/bin/llmgate /usr/local/bin/lw /usr/local/etc/rc.d/llm /usr/local/etc/rc.d/llmgate /usr/local/etc/newsyslog.conf.d/llm.conf /usr/local/etc/llmgate
-RENDER /etc/ipfw.rules
+CMD chmod 0555 /usr/local/bin/llmgate /usr/local/bin/lw /usr/local/etc/rc.d/llm /usr/local/etc/rc.d/llmgate && chmod -R a+rX,go-w /etc/ipfw.rules /usr/local/etc/newsyslog.conf.d/llm.conf /usr/local/etc/llmgate
 RENDER /usr/local/etc/llmgate/llmgate.toml
 
-SYSRC firewall_enable=YES
-SYSRC firewall_script=/etc/ipfw.rules
 SYSRC llm_enable=YES
 SYSRC llmgate_enable=YES
-SERVICE ipfw restart
 SERVICE llm restart
 CMD for i in 1 2 3 4 5 6 7 8 9 10; do ollama list >/dev/null 2>&1 && break; sleep 1; done; ollama pull ${MODEL}
 SERVICE llmgate restart
