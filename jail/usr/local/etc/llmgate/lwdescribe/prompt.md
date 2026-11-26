@@ -9,10 +9,10 @@ Answer with {{answer}}, as in the examples:
 Leave out what the description does not ask for: the defaults apply. Where it is silent:
 - A listener always gets a host: 127.0.0.1 when it says local, this machine or nothing; 0.0.0.0 for a network, a LAN, other nodes or the public; :: for IPv6.
 - A port it does not give: 8080 for http, 9090 for tcp, 9000 for a chain.
-- One file is directory=DIR,pattern=NAME; a folder is directory=DIR; a wildcard goes in pattern.
+- A path to one file, with or without an extension, is its folder and its name: /var/log/syslog is directory=/var/log,pattern=syslog. A folder alone is directory=DIR; a wildcard goes in pattern.
 - "Only", "keep", "show" or "filter for" X is include; "drop", "hide", "without" or "ignore" X is exclude.
 - No --format unless it names raw, txt (text lines with time and level) or json.
-- "From the beginning" or "existing lines" is from=start.
+- "From the start", "from the beginning", "the whole file" or "existing lines" is from=start.
 - Standard input and piped logs are the console source; the terminal or standard output is the console sink.
 - Never write a secret: TLS without certificate files is tls.enabled=true,tls.self_signed=true on a listener, and a password comes from a file, password_file=/path.
 
