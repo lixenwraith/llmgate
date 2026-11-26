@@ -1,0 +1,76 @@
+# llmgate: the one way from web pages to a local model. Every key is shown
+# with its default but listen, proxies and model.name, which the template
+# fills from its arguments; a key llmgate does not know is refused at start.
+# LLMGATE_ variables (llmgate_env in rc.conf) override a key by its path:
+# LLMGATE_MODEL_THREADS=6.
+
+# Where nginx reaches the apps: the jail's address. ipfw admits only nginx's
+# address to this port.
+listen = "${JAIL_IP}:8888"
+# Status for the operator, inside the jail only: fetch -qo - http://127.0.0.1:8889/
+admin = "127.0.0.1:8889"
+# nginx's address as the jail sees it: its X-Real-IP is the visitor's.
+proxies = ["${NGINX_ADDR}"]
+max_body = 8192
+
+[model]
+url = "http://127.0.0.1:11434"
+# The model as Ollama names it (ollama list). One model serves every app.
+name = "${MODEL}"
+# Sent with every request, so every app shares one loaded model: a change of
+# either reloads it. threads: cores the model may use at once, any of them.
+context = 6144
+threads = 4
+# off sends think=false (models that think unasked), on sends true, "" none.
+think = "off"
+health = "15s"
+
+[line]
+# Requests waiting for the model at most; one runs at a time.
+waiting = 6
+# A request's whole life, queueing included.
+deadline = "150s"
+# A line on the stream this often, so nginx's idle timers never fire.
+heartbeat = "10s"
+
+[log]
+# llmgate.log: operations. requests.log: one JSON record a request, for
+# review; the pages that call llmgate should tell visitors what it keeps.
+directory = "/var/log/llmgate"
+level = "info"
+max_size_mb = 10
+max_total_size_mb = 500
+retention_days = 14
+console = false
+
+[apps.lwdescribe]
+enabled = true
+# lw built from the LogWisp the page's engine is built from (make lw).
+lw = "/usr/local/bin/lw"
+assets = "/usr/local/etc/llmgate/lwdescribe"
+work_dir = "/var/empty"
+# patterns: the JSON Schema holds each flag line to lw's language; array: the
+# shape only; none: no format, the answer parsed as it comes.
+constrain = "patterns"
+max_chars = 600
+max_lines = 12
+max_tokens = 320
+repairs = 1
+# The description and the draft in requests.log; false keeps the numbers
+# only.
+record_text = true
+
+[apps.lwdescribe.limits.client]
+# Each visitor's own: a burst, the time one more comes back, and drafts a
+# UTC day. The page states them; the guide is the way to more.
+burst = 1
+refill = "10s"
+daily = 20
+
+[apps.lwdescribe.limits.app]
+# The app's, across visitors, so a crowd of first drafts cannot hold the
+# model: 6 at once, then one each 20 s (the model busy at most about half its
+# time at 5-10 s a draft), and drafts a UTC day. burst = 0 sets no pace.
+burst = 6
+refill = "20s"
+daily = 500

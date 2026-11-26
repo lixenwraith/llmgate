@@ -1,0 +1,24 @@
+#!/bin/sh
+# The llm jail: nginx alone reaches llmgate on 8888. Ollama (11434) and
+# llmgate's status page (8889) listen on loopback.
+ipfw -q -f flush
+
+# Allow loopback
+ipfw -q add 100 allow all from any to any via lo0
+
+# Allow established connections
+ipfw -q add 200 check-state
+ipfw -q add 300 allow tcp from any to any established
+
+# Allow outbound: pkg updates and model pulls
+ipfw -q add 400 allow tcp from me to any setup keep-state
+ipfw -q add 500 allow udp from me to any keep-state
+
+# Service-specific inbound: llmgate, from nginx alone
+ipfw -q add 600 allow tcp from ${NGINX_ADDR} to me 8888 setup keep-state
+
+# Allow ICMP
+ipfw -q add 3000 allow icmp from any to any icmptypes 0,3,8,11
+
+# Block everything else
+ipfw -q add 65000 deny log all from any to any

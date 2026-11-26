@@ -1,0 +1,3 @@
+# What make places: the native lw for the tests, and the jail's binaries
+/bin/
+/jail/usr/local/bin/

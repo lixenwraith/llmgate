@@ -1,0 +1,2476 @@
+{
+  "version": "5e1ba64",
+  "settings": [
+    {
+      "key": "quiet",
+      "kind": "bool",
+      "help": "silence lw's own log and notices; pipeline output still flows",
+      "variable": "LOGWISP_QUIET"
+    },
+    {
+      "key": "color",
+      "kind": "string",
+      "default": "auto",
+      "help": "stamps, levels, sources and fields in color on console sinks without their own",
+      "enum": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "variable": "LOGWISP_COLOR"
+    },
+    {
+      "key": "status_reporter",
+      "kind": "bool",
+      "default": "true",
+      "help": "log pipeline statistics every 30 s at debug; without a file, off",
+      "variable": "LOGWISP_STATUS_REPORTER"
+    },
+    {
+      "key": "auto_reload",
+      "kind": "bool",
+      "help": "reload when the file changes",
+      "variable": "LOGWISP_AUTO_RELOAD"
+    },
+    {
+      "key": "logging.output",
+      "kind": "string",
+      "default": "stderr",
+      "help": "where lw's own log goes; split: warn and error to stderr",
+      "enum": [
+        "file",
+        "stdout",
+        "stderr",
+        "split",
+        "all",
+        "none"
+      ],
+      "variable": "LOGWISP_LOGGING_OUTPUT"
+    },
+    {
+      "key": "logging.level",
+      "kind": "string",
+      "default": "info",
+      "help": "lowest level logged; without a file, warn",
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ],
+      "variable": "LOGWISP_LOGGING_LEVEL"
+    },
+    {
+      "key": "logging.format",
+      "kind": "string",
+      "default": "txt",
+      "help": "format of lw's own log",
+      "enum": [
+        "raw",
+        "txt",
+        "json"
+      ],
+      "zero": "the log default",
+      "variable": "LOGWISP_LOGGING_FORMAT"
+    },
+    {
+      "key": "logging.sanitization",
+      "kind": "string",
+      "default": "json",
+      "help": "how lw's own log escapes control characters",
+      "enum": [
+        "raw",
+        "json",
+        "txt",
+        "shell"
+      ],
+      "zero": "json",
+      "variable": "LOGWISP_LOGGING_SANITIZATION"
+    },
+    {
+      "key": "logging.file.directory",
+      "kind": "string",
+      "default": "./log",
+      "help": "where file and all write; the limits below delete only lw's files in it",
+      "hint": "dir",
+      "variable": "LOGWISP_LOGGING_FILE_DIRECTORY"
+    },
+    {
+      "key": "logging.file.name",
+      "kind": "string",
+      "default": "logwisp",
+      "help": "base name of the files",
+      "variable": "LOGWISP_LOGGING_FILE_NAME"
+    },
+    {
+      "key": "logging.file.max_size_mb",
+      "kind": "integer",
+      "default": "100",
+      "help": "size at which a file rotates",
+      "variable": "LOGWISP_LOGGING_FILE_MAX_SIZE_MB"
+    },
+    {
+      "key": "logging.file.max_total_size_mb",
+      "kind": "integer",
+      "default": "1000",
+      "help": "size of all lw's files there, beyond which the oldest go",
+      "variable": "LOGWISP_LOGGING_FILE_MAX_TOTAL_SIZE_MB"
+    },
+    {
+      "key": "logging.file.retention_hours",
+      "kind": "number",
+      "default": "168",
+      "help": "hours a file is kept; 0 keeps them",
+      "variable": "LOGWISP_LOGGING_FILE_RETENTION_HOURS"
+    },
+    {
+      "key": "logging.console.target",
+      "kind": "string",
+      "default": "stderr",
+      "help": "accepted without effect: logging.output chooses the console",
+      "enum": [
+        "stdout",
+        "stderr",
+        "split"
+      ],
+      "variable": "LOGWISP_LOGGING_CONSOLE_TARGET"
+    }
+  ],
+  "pipeline_flags": [
+    {
+      "flag": "pipeline",
+      "variable": "LOGWISP_PIPELINE",
+      "typed": false,
+      "many": false
+    },
+    {
+      "flag": "preset",
+      "variable": "LOGWISP_PRESET",
+      "typed": true,
+      "many": false
+    },
+    {
+      "flag": "source",
+      "variable": "LOGWISP_SOURCE",
+      "typed": true,
+      "many": true
+    },
+    {
+      "flag": "sink",
+      "variable": "LOGWISP_SINK",
+      "typed": true,
+      "many": true
+    },
+    {
+      "flag": "filter",
+      "variable": "LOGWISP_FILTER",
+      "typed": true,
+      "many": true
+    },
+    {
+      "flag": "format",
+      "variable": "LOGWISP_FORMAT",
+      "typed": true,
+      "many": false
+    },
+    {
+      "flag": "rate-limit",
+      "variable": "LOGWISP_RATE_LIMIT",
+      "typed": false,
+      "many": false
+    },
+    {
+      "flag": "heartbeat",
+      "variable": "LOGWISP_HEARTBEAT",
+      "typed": false,
+      "many": false
+    }
+  ],
+  "flow": [
+    {
+      "key": "rate_limit",
+      "summary": "Drop entries beyond a rate, and those over a size",
+      "keys": [
+        {
+          "key": "entries_per_second",
+          "kind": "number",
+          "help": "entries a second let through; unset, the stage limits nothing, sizes included",
+          "min": 0,
+          "zero": "off"
+        },
+        {
+          "key": "burst_entries",
+          "kind": "number",
+          "help": "entries that may pass in a burst before entries_per_second holds them back; at least 1",
+          "min": 0,
+          "zero": "one second's worth"
+        },
+        {
+          "key": "policy",
+          "kind": "string",
+          "default": "pass",
+          "help": "drop enforces entries_per_second and max_entry_size_bytes; pass lets every entry through",
+          "enum": [
+            "pass",
+            "drop"
+          ]
+        },
+        {
+          "key": "max_entry_size_bytes",
+          "kind": "integer",
+          "help": "drop larger entries; needs entries_per_second and policy drop",
+          "min": 0,
+          "zero": "unlimited"
+        }
+      ],
+      "on": {
+        "policy": "drop"
+      }
+    },
+    {
+      "key": "filters",
+      "summary": "Pass or drop entries by RE2 patterns, in order",
+      "list": true,
+      "keys": [
+        {
+          "key": "type",
+          "kind": "string",
+          "default": "include",
+          "help": "pass only matching entries, or drop them",
+          "enum": [
+            "include",
+            "exclude"
+          ]
+        },
+        {
+          "key": "logic",
+          "kind": "string",
+          "default": "or",
+          "help": "match any pattern, or all",
+          "enum": [
+            "or",
+            "and"
+          ]
+        },
+        {
+          "key": "patterns",
+          "kind": "list",
+          "help": "RE2 patterns",
+          "required": true,
+          "hint": "regex"
+        }
+      ]
+    },
+    {
+      "key": "format",
+      "summary": "How entries are written: raw, txt or json",
+      "keys": [
+        {
+          "key": "type",
+          "kind": "string",
+          "default": "raw",
+          "help": "raw writes each message as it came, txt a line with time and level, json one object an entry",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        },
+        {
+          "key": "flags",
+          "kind": "integer",
+          "help": "for experts, a sum of bits over the type's choice: 1 writes messages verbatim, 16 drops the time, 32 the level",
+          "zero": "by type"
+        },
+        {
+          "key": "timestamp_format",
+          "kind": "string",
+          "help": "timestamp layout: the reference time 2006-01-02 15:04:05 written as timestamps should look, such as 02 Jan 15:04",
+          "zero": "RFC 3339 with nanoseconds"
+        },
+        {
+          "key": "sanitizer_policy",
+          "kind": "string",
+          "help": "how control characters are escaped",
+          "enum": [
+            "raw",
+            "json",
+            "txt",
+            "shell"
+          ],
+          "zero": "by type"
+        }
+      ]
+    },
+    {
+      "key": "heartbeat",
+      "summary": "A keep-alive entry on a timer, beside the entries",
+      "keys": [
+        {
+          "key": "enabled",
+          "kind": "bool",
+          "help": "send heartbeats; false keeps these settings and sends none"
+        },
+        {
+          "key": "interval_ms",
+          "kind": "integer",
+          "default": "1000",
+          "help": "milliseconds between heartbeats",
+          "min": 100
+        },
+        {
+          "key": "include_timestamp",
+          "kind": "bool",
+          "help": "stamp each heartbeat with its time"
+        },
+        {
+          "key": "include_stats",
+          "kind": "bool",
+          "help": "add type, beat_count and, from the second beat, the measured interval_ms"
+        },
+        {
+          "key": "format",
+          "kind": "string",
+          "default": "txt",
+          "help": "kept for older files; heartbeats are written in the flow's format",
+          "enum": [
+            "txt",
+            "json",
+            "raw"
+          ]
+        }
+      ],
+      "on": {
+        "enabled": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "type": "console",
+      "side": "local",
+      "http": false,
+      "single": true,
+      "summary": "Standard input, line by line",
+      "keys": [
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Follow the files of a directory that match a pattern",
+      "keys": [
+        {
+          "key": "directory",
+          "kind": "string",
+          "help": "directory whose files are followed",
+          "required": true,
+          "hint": "dir"
+        },
+        {
+          "key": "pattern",
+          "kind": "string",
+          "default": "*",
+          "help": "glob the file names match",
+          "hint": "glob"
+        },
+        {
+          "key": "check_interval_ms",
+          "kind": "integer",
+          "default": "100",
+          "help": "milliseconds between scans for files",
+          "min": 10
+        },
+        {
+          "key": "raw",
+          "kind": "bool",
+          "help": "keep the whole line as the message, never parse it"
+        },
+        {
+          "key": "from",
+          "kind": "string",
+          "default": "end",
+          "help": "where reading a newly found file starts",
+          "enum": [
+            "start",
+            "end"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "random",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Generated entries, to check a deployment before real logs",
+      "keys": [
+        {
+          "key": "interval_ms",
+          "kind": "integer",
+          "default": "500",
+          "help": "milliseconds between entries",
+          "min": 1
+        },
+        {
+          "key": "jitter_ms",
+          "kind": "integer",
+          "help": "milliseconds the interval varies by, half each way; at most the interval",
+          "min": 0,
+          "zero": "none"
+        },
+        {
+          "key": "format",
+          "kind": "string",
+          "default": "txt",
+          "help": "entry format",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        },
+        {
+          "key": "length",
+          "kind": "integer",
+          "default": "20",
+          "help": "bytes of random text",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "special",
+          "kind": "bool",
+          "help": "mix in control and non-ASCII bytes"
+        }
+      ]
+    },
+    {
+      "type": "null",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Nothing; holds a source's place until one is chosen",
+      "keys": []
+    },
+    {
+      "type": "tcp_chain",
+      "side": "chain_listener",
+      "http": false,
+      "single": false,
+      "summary": "Receive entries from other nodes' tcp_chain sinks, each over one lasting TCP connection",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS for the connections it accepts",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "self_signed",
+              "kind": "bool",
+              "help": "a self-signed certificate on a key made at startup",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_cert_file",
+              "kind": "string",
+              "help": "CA certificate file (lw tls ca) that signs a certificate made at startup",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_key_file",
+              "kind": "string",
+              "help": "key of issuer_cert_file",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "hosts",
+              "kind": "list",
+              "help": "more names and addresses for a certificate made at startup, which always carries host, this machine's name and localhost",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_auth",
+              "kind": "bool",
+              "help": "require and verify client certificates",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying client certificates",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "default": "127.0.0.1",
+          "help": "address to listen on, one family per listener: 127.0.0.1 or ::1 this machine only, 0.0.0.0 every IPv4 interface, :: every IPv6 interface",
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port to listen on",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "max_connections",
+          "kind": "integer",
+          "help": "connections at once",
+          "min": 0,
+          "zero": "unlimited"
+        },
+        {
+          "key": "read_timeout_ms",
+          "kind": "integer",
+          "default": "300000",
+          "help": "milliseconds a connection may idle",
+          "min": 0,
+          "zero": "none"
+        },
+        {
+          "key": "hello_timeout_ms",
+          "kind": "integer",
+          "default": "10000",
+          "help": "milliseconds for a peer's hello",
+          "min": 1
+        },
+        {
+          "key": "trust_node",
+          "kind": "bool",
+          "default": "true",
+          "help": "keep the node label a peer declares; off, the label is its address"
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how peers authenticate: mtls by client certificate, scram by user and password",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "node_binding",
+              "kind": "string",
+              "help": "chain sources: force labels every entry with the peer's identity, assert refuses a peer declaring another node, none leaves it to trust_node",
+              "enum": [
+                "none",
+                "assert",
+                "force"
+              ],
+              "zero": "force",
+              "sides": [
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "credentials_file",
+              "kind": "string",
+              "help": "scram: file of the users who may log in, made by lw auth add-user",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        },
+        {
+          "key": "acl",
+          "kind": "table",
+          "help": "client addresses admitted or refused, and per-client limits",
+          "keys": [
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "addresses or CIDRs that may connect; unset, any that deny does not refuse",
+              "hint": "cidr"
+            },
+            {
+              "key": "deny",
+              "kind": "list",
+              "help": "addresses or CIDRs refused, even when allow lists them",
+              "hint": "cidr"
+            },
+            {
+              "key": "proxy_protocol",
+              "kind": "string",
+              "default": "off",
+              "help": "read a PROXY header from proxy_from",
+              "enum": [
+                "off",
+                "required"
+              ]
+            },
+            {
+              "key": "proxy_from",
+              "kind": "list",
+              "help": "proxies that may send a PROXY header",
+              "hint": "cidr"
+            },
+            {
+              "key": "max_connections_per_client",
+              "kind": "integer",
+              "help": "connections a client may hold",
+              "min": 0,
+              "zero": "unlimited"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "http_chain",
+      "side": "chain_listener",
+      "http": true,
+      "single": false,
+      "summary": "Receive entries from other nodes' http_chain sinks, as batches each posts over HTTP",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS for the connections it accepts",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "self_signed",
+              "kind": "bool",
+              "help": "a self-signed certificate on a key made at startup",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_cert_file",
+              "kind": "string",
+              "help": "CA certificate file (lw tls ca) that signs a certificate made at startup",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_key_file",
+              "kind": "string",
+              "help": "key of issuer_cert_file",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "hosts",
+              "kind": "list",
+              "help": "more names and addresses for a certificate made at startup, which always carries host, this machine's name and localhost",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_auth",
+              "kind": "bool",
+              "help": "require and verify client certificates",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying client certificates",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "default": "127.0.0.1",
+          "help": "address to listen on, one family per listener: 127.0.0.1 or ::1 this machine only, 0.0.0.0 every IPv4 interface, :: every IPv6 interface",
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port to listen on",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "ingest_path",
+          "kind": "string",
+          "default": "/ingest",
+          "help": "path batches are posted to",
+          "hint": "path"
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "max_body_bytes",
+          "kind": "integer",
+          "default": "8388608",
+          "help": "largest batch accepted",
+          "min": 1
+        },
+        {
+          "key": "read_timeout_ms",
+          "kind": "integer",
+          "default": "30000",
+          "help": "milliseconds to read a request",
+          "min": 1
+        },
+        {
+          "key": "trust_node",
+          "kind": "bool",
+          "default": "true",
+          "help": "keep the node label a peer declares; off, the label is its address"
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how peers authenticate: mtls by client certificate, scram by user and password",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "node_binding",
+              "kind": "string",
+              "help": "chain sources: force labels every entry with the peer's identity, assert refuses a peer declaring another node, none leaves it to trust_node",
+              "enum": [
+                "none",
+                "assert",
+                "force"
+              ],
+              "zero": "force",
+              "sides": [
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "credentials_file",
+              "kind": "string",
+              "help": "scram: file of the users who may log in, made by lw auth add-user",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "token_lifetime_ms",
+              "kind": "integer",
+              "help": "scram on HTTP: bearer token lifetime",
+              "min": 10000,
+              "max": 86400000,
+              "zero": "15 minutes",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ],
+              "http": true
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        },
+        {
+          "key": "acl",
+          "kind": "table",
+          "help": "client addresses admitted or refused, and per-client limits",
+          "keys": [
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "addresses or CIDRs that may connect; unset, any that deny does not refuse",
+              "hint": "cidr"
+            },
+            {
+              "key": "deny",
+              "kind": "list",
+              "help": "addresses or CIDRs refused, even when allow lists them",
+              "hint": "cidr"
+            },
+            {
+              "key": "proxy_protocol",
+              "kind": "string",
+              "default": "off",
+              "help": "read a PROXY header from proxy_from",
+              "enum": [
+                "off",
+                "required"
+              ]
+            },
+            {
+              "key": "proxy_from",
+              "kind": "list",
+              "help": "proxies that may send a PROXY header",
+              "hint": "cidr"
+            },
+            {
+              "key": "max_connections_per_client",
+              "kind": "integer",
+              "help": "connections a client may hold",
+              "min": 0,
+              "zero": "unlimited"
+            },
+            {
+              "key": "requests_per_second_per_client",
+              "kind": "number",
+              "help": "HTTP: requests a client may make each second",
+              "min": 0,
+              "zero": "unlimited",
+              "http": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sinks": [
+    {
+      "type": "console",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Standard output or standard error",
+      "keys": [
+        {
+          "key": "target",
+          "kind": "string",
+          "default": "stdout",
+          "help": "stream written to",
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "escape",
+          "kind": "string",
+          "default": "auto",
+          "help": "write control characters as \u003chex\u003e; auto on a terminal",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ]
+        },
+        {
+          "key": "color",
+          "kind": "string",
+          "default": "auto",
+          "help": "stamps, levels, sources and fields in color; unset, the top-level color",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Rotating files",
+      "keys": [
+        {
+          "key": "directory",
+          "kind": "string",
+          "help": "directory written to",
+          "required": true,
+          "hint": "dir"
+        },
+        {
+          "key": "name",
+          "kind": "string",
+          "help": "base name of the files",
+          "required": true
+        },
+        {
+          "key": "max_size_mb",
+          "kind": "integer",
+          "default": "100",
+          "help": "size at which a file rotates",
+          "min": 1
+        },
+        {
+          "key": "max_total_size_mb",
+          "kind": "integer",
+          "default": "1000",
+          "help": "size of all files, beyond which the oldest go",
+          "min": 1
+        },
+        {
+          "key": "min_disk_free_mb",
+          "kind": "integer",
+          "default": "100",
+          "help": "megabytes kept free on the disk, the sink's oldest files deleted for it, then writing paused; a negative value means 100",
+          "zero": "none"
+        },
+        {
+          "key": "retention_hours",
+          "kind": "number",
+          "default": "168",
+          "help": "hours a file is kept; 0 keeps them",
+          "min": 0,
+          "zero": "kept"
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "flush_interval_ms",
+          "kind": "integer",
+          "default": "100",
+          "help": "milliseconds between flushes",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "type": "null",
+      "side": "local",
+      "http": false,
+      "single": false,
+      "summary": "Discards; holds a sink's place until one is chosen",
+      "keys": []
+    },
+    {
+      "type": "tcp",
+      "side": "listener",
+      "http": false,
+      "single": false,
+      "summary": "Serve entries to TCP clients, one per line",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS for the connections it accepts",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "self_signed",
+              "kind": "bool",
+              "help": "a self-signed certificate on a key made at startup",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_cert_file",
+              "kind": "string",
+              "help": "CA certificate file (lw tls ca) that signs a certificate made at startup",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_key_file",
+              "kind": "string",
+              "help": "key of issuer_cert_file",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "hosts",
+              "kind": "list",
+              "help": "more names and addresses for a certificate made at startup, which always carries host, this machine's name and localhost",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_auth",
+              "kind": "bool",
+              "help": "require and verify client certificates",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying client certificates",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "default": "127.0.0.1",
+          "help": "address to listen on, one family per listener: 127.0.0.1 or ::1 this machine only, 0.0.0.0 every IPv4 interface, :: every IPv6 interface",
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port to listen on",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued for all clients",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "client_buffer_size",
+          "kind": "integer",
+          "default": "256",
+          "help": "entries queued per client",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "write_timeout_ms",
+          "kind": "integer",
+          "default": "5000",
+          "help": "milliseconds a write may take before the client is dropped",
+          "min": 1
+        },
+        {
+          "key": "keep_alive",
+          "kind": "bool",
+          "default": "true",
+          "help": "TCP keep-alive"
+        },
+        {
+          "key": "keep_alive_period_ms",
+          "kind": "integer",
+          "default": "30000",
+          "help": "milliseconds idle before a keep-alive probe",
+          "min": 1
+        },
+        {
+          "key": "max_connections",
+          "kind": "integer",
+          "help": "clients at once",
+          "min": 0,
+          "zero": "unlimited"
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how peers authenticate: mtls by client certificate, scram by user and password",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "credentials_file",
+              "kind": "string",
+              "help": "scram: file of the users who may log in, made by lw auth add-user",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        },
+        {
+          "key": "acl",
+          "kind": "table",
+          "help": "client addresses admitted or refused, and per-client limits",
+          "keys": [
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "addresses or CIDRs that may connect; unset, any that deny does not refuse",
+              "hint": "cidr"
+            },
+            {
+              "key": "deny",
+              "kind": "list",
+              "help": "addresses or CIDRs refused, even when allow lists them",
+              "hint": "cidr"
+            },
+            {
+              "key": "proxy_protocol",
+              "kind": "string",
+              "default": "off",
+              "help": "read a PROXY header from proxy_from",
+              "enum": [
+                "off",
+                "required"
+              ]
+            },
+            {
+              "key": "proxy_from",
+              "kind": "list",
+              "help": "proxies that may send a PROXY header",
+              "hint": "cidr"
+            },
+            {
+              "key": "max_connections_per_client",
+              "kind": "integer",
+              "help": "connections a client may hold",
+              "min": 0,
+              "zero": "unlimited"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "http",
+      "side": "listener",
+      "http": true,
+      "single": false,
+      "summary": "Serve entries as server-sent events, with a browser viewer",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS for the connections it accepts",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "self_signed",
+              "kind": "bool",
+              "help": "a self-signed certificate on a key made at startup",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_cert_file",
+              "kind": "string",
+              "help": "CA certificate file (lw tls ca) that signs a certificate made at startup",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "issuer_key_file",
+              "kind": "string",
+              "help": "key of issuer_cert_file",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "hosts",
+              "kind": "list",
+              "help": "more names and addresses for a certificate made at startup, which always carries host, this machine's name and localhost",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_auth",
+              "kind": "bool",
+              "help": "require and verify client certificates",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "client_ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying client certificates",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "default": "127.0.0.1",
+          "help": "address to listen on, one family per listener: 127.0.0.1 or ::1 this machine only, 0.0.0.0 every IPv4 interface, :: every IPv6 interface",
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port to listen on",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "stream_path",
+          "kind": "string",
+          "default": "/stream",
+          "help": "path of the event stream",
+          "hint": "path"
+        },
+        {
+          "key": "status_path",
+          "kind": "string",
+          "default": "/status",
+          "help": "path of the status document",
+          "hint": "path"
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued for all clients",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "client_buffer_size",
+          "kind": "integer",
+          "default": "256",
+          "help": "entries queued per client",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "write_timeout_ms",
+          "kind": "integer",
+          "default": "5000",
+          "help": "milliseconds an event write may take",
+          "min": 0,
+          "zero": "none"
+        },
+        {
+          "key": "max_connections",
+          "kind": "integer",
+          "help": "clients at once",
+          "min": 0,
+          "zero": "unlimited"
+        },
+        {
+          "key": "replay_lines",
+          "kind": "integer",
+          "help": "recent entries a new stream gets first",
+          "min": 0,
+          "max": 1048576,
+          "zero": "none"
+        },
+        {
+          "key": "login_page",
+          "kind": "bool",
+          "help": "scram behind auth.trusted_proxies only: a login page at /auth/login"
+        },
+        {
+          "key": "viewer_page",
+          "kind": "bool",
+          "help": "scram behind auth.trusted_proxies only: the viewer after a login; without scram it is always at /"
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how peers authenticate: mtls by client certificate, scram by user and password",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "credentials_file",
+              "kind": "string",
+              "help": "scram: file of the users who may log in, made by lw auth add-user",
+              "hint": "file",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ]
+            },
+            {
+              "key": "token_lifetime_ms",
+              "kind": "integer",
+              "help": "scram on HTTP: bearer token lifetime",
+              "min": 10000,
+              "max": 86400000,
+              "zero": "15 minutes",
+              "sides": [
+                "listener",
+                "chain_listener"
+              ],
+              "http": true
+            },
+            {
+              "key": "trusted_proxies",
+              "kind": "list",
+              "help": "scram on the http sink: addresses or CIDRs of the proxies that end browsers' TLS, through which browsers then log in",
+              "hint": "cidr",
+              "sides": [
+                "listener"
+              ],
+              "http": true
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        },
+        {
+          "key": "acl",
+          "kind": "table",
+          "help": "client addresses admitted or refused, and per-client limits",
+          "keys": [
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "addresses or CIDRs that may connect; unset, any that deny does not refuse",
+              "hint": "cidr"
+            },
+            {
+              "key": "deny",
+              "kind": "list",
+              "help": "addresses or CIDRs refused, even when allow lists them",
+              "hint": "cidr"
+            },
+            {
+              "key": "proxy_protocol",
+              "kind": "string",
+              "default": "off",
+              "help": "read a PROXY header from proxy_from",
+              "enum": [
+                "off",
+                "required"
+              ]
+            },
+            {
+              "key": "proxy_from",
+              "kind": "list",
+              "help": "proxies that may send a PROXY header",
+              "hint": "cidr"
+            },
+            {
+              "key": "max_connections_per_client",
+              "kind": "integer",
+              "help": "connections a client may hold",
+              "min": 0,
+              "zero": "unlimited"
+            },
+            {
+              "key": "requests_per_second_per_client",
+              "kind": "number",
+              "help": "HTTP: requests a client may make each second",
+              "min": 0,
+              "zero": "unlimited",
+              "http": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "tcp_chain",
+      "side": "dialer",
+      "http": false,
+      "single": false,
+      "summary": "Forward entries to another node's tcp_chain source over one lasting TCP connection",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS to the source it connects to",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying the server",
+              "zero": "the system roots",
+              "hint": "file",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "server_name",
+              "kind": "string",
+              "help": "name the server's certificate must carry",
+              "zero": "the host",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "insecure_skip_verify",
+              "kind": "bool",
+              "help": "verify nothing of the server; never in production",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "pin_sha256",
+              "kind": "string",
+              "help": "sha256//BASE64 of the server's key, ';' between several; replaces ca_file",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "node",
+          "kind": "string",
+          "help": "origin label of the entries",
+          "zero": "the host name"
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "help": "host of the tcp_chain source",
+          "required": true,
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port of the tcp_chain source",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "dial_timeout_ms",
+          "kind": "integer",
+          "default": "5000",
+          "help": "milliseconds to connect",
+          "min": 1
+        },
+        {
+          "key": "write_timeout_ms",
+          "kind": "integer",
+          "default": "5000",
+          "help": "milliseconds a write may take",
+          "min": 1
+        },
+        {
+          "key": "backoff_min_ms",
+          "kind": "integer",
+          "default": "500",
+          "help": "first wait before reconnecting",
+          "min": 1
+        },
+        {
+          "key": "backoff_max_ms",
+          "kind": "integer",
+          "default": "30000",
+          "help": "longest wait before reconnecting; below the first, the default",
+          "min": 1
+        },
+        {
+          "key": "keep_alive_period_ms",
+          "kind": "integer",
+          "default": "30000",
+          "help": "milliseconds idle before a keep-alive probe",
+          "min": 1
+        },
+        {
+          "key": "keep_alive",
+          "kind": "bool",
+          "default": "true",
+          "help": "TCP keep-alive"
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how it authenticates with the source: scram logs in, mtls checks the source's identity",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "http_chain",
+      "side": "dialer",
+      "http": true,
+      "single": false,
+      "summary": "Forward entries to another node's http_chain source in batches, an HTTP POST each",
+      "keys": [
+        {
+          "key": "tls",
+          "kind": "table",
+          "help": "TLS to the source it connects to",
+          "keys": [
+            {
+              "key": "enabled",
+              "kind": "bool",
+              "help": "use TLS"
+            },
+            {
+              "key": "cert_file",
+              "kind": "string",
+              "help": "certificate file this end presents; a dialer's, for a listener with client_auth",
+              "hint": "file"
+            },
+            {
+              "key": "key_file",
+              "kind": "string",
+              "help": "key of cert_file",
+              "hint": "file"
+            },
+            {
+              "key": "ca_file",
+              "kind": "string",
+              "help": "CA bundle verifying the server",
+              "zero": "the system roots",
+              "hint": "file",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "server_name",
+              "kind": "string",
+              "help": "name the server's certificate must carry",
+              "zero": "the host",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "insecure_skip_verify",
+              "kind": "bool",
+              "help": "verify nothing of the server; never in production",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "pin_sha256",
+              "kind": "string",
+              "help": "sha256//BASE64 of the server's key, ';' between several; replaces ca_file",
+              "sides": [
+                "dialer"
+              ]
+            },
+            {
+              "key": "min_version",
+              "kind": "string",
+              "default": "1.3",
+              "help": "lowest TLS version",
+              "enum": [
+                "1.2",
+                "1.3"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "node",
+          "kind": "string",
+          "help": "origin label of the entries",
+          "zero": "the host name"
+        },
+        {
+          "key": "host",
+          "kind": "string",
+          "help": "host of the http_chain source",
+          "required": true,
+          "hint": "host"
+        },
+        {
+          "key": "port",
+          "kind": "integer",
+          "help": "port of the http_chain source",
+          "required": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "ingest_path",
+          "kind": "string",
+          "default": "/ingest",
+          "help": "path batches are posted to",
+          "hint": "path"
+        },
+        {
+          "key": "buffer_size",
+          "kind": "integer",
+          "default": "1000",
+          "help": "entries queued",
+          "min": 1,
+          "max": 1048576
+        },
+        {
+          "key": "max_batch_count",
+          "kind": "integer",
+          "default": "100",
+          "help": "entries in a batch",
+          "min": 1
+        },
+        {
+          "key": "max_batch_bytes",
+          "kind": "integer",
+          "default": "1048576",
+          "help": "bytes in a batch",
+          "min": 1
+        },
+        {
+          "key": "flush_interval_ms",
+          "kind": "integer",
+          "default": "1000",
+          "help": "milliseconds before a partial batch is sent",
+          "min": 1
+        },
+        {
+          "key": "request_timeout_ms",
+          "kind": "integer",
+          "default": "10000",
+          "help": "milliseconds for a request: dial, write and response",
+          "min": 1
+        },
+        {
+          "key": "backoff_min_ms",
+          "kind": "integer",
+          "default": "500",
+          "help": "first wait before retrying",
+          "min": 1
+        },
+        {
+          "key": "backoff_max_ms",
+          "kind": "integer",
+          "default": "30000",
+          "help": "longest wait before retrying; below the first, the default",
+          "min": 1
+        },
+        {
+          "key": "auth",
+          "kind": "table",
+          "help": "how it authenticates with the source: scram logs in, mtls checks the source's identity",
+          "keys": [
+            {
+              "key": "type",
+              "kind": "string",
+              "default": "none",
+              "help": "how peers authenticate",
+              "enum": [
+                "none",
+                "mtls",
+                "scram"
+              ]
+            },
+            {
+              "key": "identity",
+              "kind": "string",
+              "help": "certificate field naming the peer; under scram it must equal the user",
+              "enum": [
+                "cn",
+                "san_dns",
+                "san_uri",
+                "san_email"
+              ],
+              "zero": "cn under mtls; no binding under scram"
+            },
+            {
+              "key": "allow",
+              "kind": "list",
+              "help": "mtls: identities admitted; with neither this nor allow_patterns set, any the CA issued"
+            },
+            {
+              "key": "allow_patterns",
+              "kind": "list",
+              "help": "mtls: RE2 patterns of identities admitted; anchor them",
+              "hint": "regex"
+            },
+            {
+              "key": "username",
+              "kind": "string",
+              "help": "scram: the user a dialer logs in as, or a listener's one user"
+            },
+            {
+              "key": "password_file",
+              "kind": "string",
+              "help": "scram: file holding the password; /dev/fd/N or a pipe is read once, /dev/tty asks",
+              "hint": "file"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "pipe",
+      "summary": "Standard input to standard output, line for line: lw without a file",
+      "keys": [
+        {
+          "name": "format",
+          "default": "raw",
+          "help": "raw writes each message as it came, txt a line with time and level, json one object an entry",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tail",
+      "summary": "Follow files to standard output, like tail -F",
+      "keys": [
+        {
+          "name": "path",
+          "help": "a file, a directory (its files) or a glob such as /var/log/*.log, to follow",
+          "required": true
+        },
+        {
+          "name": "from",
+          "default": "end",
+          "help": "where reading a file starts",
+          "enum": [
+            "start",
+            "end"
+          ]
+        },
+        {
+          "name": "format",
+          "default": "raw",
+          "help": "raw writes each message as it came, txt a line with time and level, json one object an entry",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serve",
+      "summary": "Serve files or standard input live: a browser viewer at /, SSE at /stream",
+      "keys": [
+        {
+          "name": "path",
+          "help": "a file, a directory (its files) or a glob such as /var/log/*.log, to follow; default: standard input"
+        },
+        {
+          "name": "from",
+          "default": "end",
+          "help": "where reading a file starts",
+          "enum": [
+            "start",
+            "end"
+          ]
+        },
+        {
+          "name": "format",
+          "default": "json",
+          "help": "raw writes each message as it came, txt a line with time and level, json one object an entry",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        },
+        {
+          "name": "listen",
+          "default": "127.0.0.1:8080",
+          "help": "HOST:PORT to listen on: 127.0.0.1:8080 this machine only, 0.0.0.0:8080 every IPv4 interface, [::]:8080 every IPv6 interface"
+        },
+        {
+          "name": "tls",
+          "default": "off",
+          "help": "plain text, a certificate made at startup (self-signed, or from issuer_*), or files",
+          "enum": [
+            "off",
+            "self",
+            "issuer",
+            "files"
+          ]
+        },
+        {
+          "name": "users",
+          "help": "credentials file (lw auth add-user): readers log in with SCRAM",
+          "hint": "file"
+        },
+        {
+          "name": "user",
+          "help": "the one SCRAM user readers log in as, in place of users"
+        },
+        {
+          "name": "password_file",
+          "help": "file holding user's password; /dev/fd/N or a pipe is read once; default: /dev/tty, which asks",
+          "hint": "file"
+        },
+        {
+          "name": "proxy",
+          "help": "addresses or CIDRs of the TLS-terminating proxies browsers come through; ',' between them",
+          "list": true,
+          "hint": "cidr"
+        },
+        {
+          "name": "viewer",
+          "default": "false",
+          "help": "a login page, then the viewer, for browsers behind proxy; without user or users the viewer is on anyway",
+          "enum": [
+            "true",
+            "false"
+          ]
+        },
+        {
+          "name": "allow",
+          "help": "addresses or CIDRs that may connect, of listen's family (either behind proxy=); default: all; ',' between them",
+          "list": true,
+          "hint": "cidr"
+        },
+        {
+          "name": "deny",
+          "help": "addresses or CIDRs refused, allow or not; ',' between them",
+          "list": true,
+          "hint": "cidr"
+        },
+        {
+          "name": "cert",
+          "help": "certificate file, for tls=files",
+          "hint": "file"
+        },
+        {
+          "name": "key",
+          "help": "key file, for tls=files",
+          "hint": "file"
+        },
+        {
+          "name": "issuer_cert",
+          "help": "CA certificate file (lw tls ca), for tls=issuer",
+          "hint": "file"
+        },
+        {
+          "name": "issuer_key",
+          "help": "CA key file, for tls=issuer",
+          "hint": "file"
+        },
+        {
+          "name": "hosts",
+          "help": "names and addresses, beyond this host's, of a self or issuer certificate; ',' between them",
+          "list": true
+        }
+      ]
+    },
+    {
+      "name": "edge",
+      "summary": "Forward files or standard input to an aggregator over TLS, authenticated",
+      "keys": [
+        {
+          "name": "path",
+          "help": "a file, a directory (its files) or a glob such as /var/log/*.log, to follow; default: standard input"
+        },
+        {
+          "name": "from",
+          "default": "end",
+          "help": "where reading a file starts",
+          "enum": [
+            "start",
+            "end"
+          ]
+        },
+        {
+          "name": "to",
+          "help": "the aggregator's HOST:PORT, an IPv6 address in brackets: logs.example.net:9000, [2001:db8::1]:9000",
+          "required": true
+        },
+        {
+          "name": "transport",
+          "default": "tcp",
+          "help": "tcp sends over one lasting connection (tcp_chain), http posts batches (http_chain)",
+          "enum": [
+            "tcp",
+            "http"
+          ]
+        },
+        {
+          "name": "ca",
+          "help": "CA file that verifies the aggregator; default: system roots",
+          "hint": "file"
+        },
+        {
+          "name": "pin",
+          "help": "sha256//BASE64 of the aggregator's key, which it logs with tls=self"
+        },
+        {
+          "name": "server_name",
+          "help": "name the aggregator's certificate carries; default: to's host"
+        },
+        {
+          "name": "user",
+          "help": "SCRAM user this edge logs in to the aggregator as"
+        },
+        {
+          "name": "password_file",
+          "help": "file holding user's password; /dev/fd/N or a pipe is read once; default: /dev/tty, which asks",
+          "hint": "file"
+        },
+        {
+          "name": "cert",
+          "help": "client certificate file, for an aggregator with client_ca",
+          "hint": "file"
+        },
+        {
+          "name": "key",
+          "help": "client key file",
+          "hint": "file"
+        },
+        {
+          "name": "node",
+          "help": "origin label; default: this host's name"
+        }
+      ]
+    },
+    {
+      "name": "aggregator",
+      "summary": "Receive from edges over TLS, authenticated, to files or standard output",
+      "keys": [
+        {
+          "name": "listen",
+          "default": "0.0.0.0:9000",
+          "help": "HOST:PORT to listen on: 0.0.0.0:9000 every IPv4 interface, [::]:9000 every IPv6 interface, 127.0.0.1:9000 this machine only"
+        },
+        {
+          "name": "transport",
+          "default": "tcp",
+          "help": "tcp sends over one lasting connection (tcp_chain), http posts batches (http_chain)",
+          "enum": [
+            "tcp",
+            "http"
+          ]
+        },
+        {
+          "name": "tls",
+          "default": "self",
+          "help": "a certificate made at startup (self-signed, or from issuer_*), or files",
+          "enum": [
+            "self",
+            "issuer",
+            "files"
+          ]
+        },
+        {
+          "name": "users",
+          "help": "credentials file (lw auth add-user): edges log in with SCRAM",
+          "hint": "file"
+        },
+        {
+          "name": "user",
+          "help": "the one SCRAM user edges log in as, in place of users"
+        },
+        {
+          "name": "password_file",
+          "help": "file holding user's password; /dev/fd/N or a pipe is read once; default: /dev/tty, which asks",
+          "hint": "file"
+        },
+        {
+          "name": "client_ca",
+          "help": "CA file that verifies edge certificates (mTLS)",
+          "hint": "file"
+        },
+        {
+          "name": "out",
+          "help": "directory for the received entries; default: standard output",
+          "hint": "dir"
+        },
+        {
+          "name": "format",
+          "default": "json",
+          "help": "raw writes each message as it came, txt a line with time and level, json one object an entry",
+          "enum": [
+            "raw",
+            "txt",
+            "json"
+          ]
+        },
+        {
+          "name": "allow",
+          "help": "addresses or CIDRs that may connect, of listen's family (either behind proxy=); default: all; ',' between them",
+          "list": true,
+          "hint": "cidr"
+        },
+        {
+          "name": "deny",
+          "help": "addresses or CIDRs refused, allow or not; ',' between them",
+          "list": true,
+          "hint": "cidr"
+        },
+        {
+          "name": "cert",
+          "help": "certificate file, for tls=files",
+          "hint": "file"
+        },
+        {
+          "name": "key",
+          "help": "key file, for tls=files",
+          "hint": "file"
+        },
+        {
+          "name": "issuer_cert",
+          "help": "CA certificate file (lw tls ca), for tls=issuer",
+          "hint": "file"
+        },
+        {
+          "name": "issuer_key",
+          "help": "CA key file, for tls=issuer",
+          "hint": "file"
+        },
+        {
+          "name": "hosts",
+          "help": "names and addresses, beyond this host's, of a self or issuer certificate; ',' between them",
+          "list": true
+        }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "name": "command",
+      "hint": "an lw command line"
+    },
+    {
+      "name": "environment",
+      "hint": "LOGWISP_ variables for one pipeline"
+    },
+    {
+      "name": "file",
+      "hint": "the pipelines of a configuration file"
+    }
+  ]
+}
