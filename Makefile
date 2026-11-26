@@ -3,7 +3,9 @@
 
 GOOS ?= freebsd
 GOARCH ?= amd64
-GO ?= go
+# FreeBSD names a Go by its release (pkg install go127), as LogWisp's make does.
+GO_DEFAULT != uname -s | grep -q FreeBSD && sed -n 's/^go \([0-9]*\)\.\([0-9]*\).*/go\1\2/p' go.mod 2>/dev/null | grep . || echo go
+GO ?= $(GO_DEFAULT)
 # LOGWISP: a LogWisp checkout, where lw is built, by default the one beside
 # this one. SCHEMA, optional: the schema.json of the engine the page runs,
 # which lw must then match.
@@ -43,7 +45,7 @@ testdata:
 	bin/lw --schema > apps/lwdescribe/testdata/schema.json
 
 check:
-	@test -z "$$(gofmt -l .)" || { gofmt -l . >&2; exit 1; }
+	@f=$$("$$($(GO) env GOROOT)/bin/gofmt" -l .); test -z "$$f" || { echo "$$f" >&2; exit 1; }
 	$(GO) vet ./...
 	if [ -x bin/lw ]; then LW="$$(pwd)/bin/lw" $(GO) test ./...; else $(GO) test ./...; fi
 
