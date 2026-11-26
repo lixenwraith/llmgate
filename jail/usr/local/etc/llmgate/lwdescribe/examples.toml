@@ -8,6 +8,10 @@ text = "Tail /var/log/app.log and stream only ERROR lines over HTTP on port 8080
 flags = ["--pipeline 'app'", "--source 'file:directory=/var/log,pattern=app.log'", "--filter 'include:patterns=ERROR'", "--sink 'http:port=8080,host=127.0.0.1'"]
 
 [[example]]
+text = "Send /var/log/messages from the start of the file to a TCP stream on port 9090 for this machine."
+flags = ["--pipeline 'messages'", "--source 'file:directory=/var/log,pattern=messages,from=start'", "--sink 'tcp:port=9090,host=127.0.0.1'"]
+
+[[example]]
 text = "Read logs piped into standard input and print them to the terminal."
 flags = ["--pipeline 'pipe'", "--source 'console'", "--sink 'console'"]
 
