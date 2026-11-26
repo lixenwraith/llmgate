@@ -38,8 +38,9 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
   prompt, the catalog and the examples, its answers asked as lw's flags a line
   each.
 - `POST /NAME`, `application/json`, at most `max_body` bytes: the app's body
-  (lwdescribe: `{"text": "..."}`). A refusal is JSON with its status:
-  `400 invalid_request|text_invalid`, `404 not_found`, `405`, `413 too_large`,
+  (lwdescribe: `{"text": "..."}`), valid UTF-8, its body in 10 s. A refusal is
+  JSON with its status: `400 invalid_request|text_invalid`, `404 not_found`,
+  `405`, `413 too_large`, `431` (headers over 64 KB),
   `415`, `429 rate_limited|daily_limit` (the client's own limits),
   `503 app_rate_limited|app_daily_limit` (the app's, across clients),
   `503 unavailable|busy|already_queued`, with `Retry-After` on 429 and 503.
@@ -47,7 +48,9 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
   `{"event":"queued","position":N,"eta_s":S}` (again whenever the place
   moves), `waiting` and `running` heartbeats, `{"event":"running","model":M}`,
   then `{"event":"done","id":ID,"ms":T,...the app's fields}` or
-  `{"event":"error","code":"timeout|model_error|...","id":ID}`.
+  `{"event":"error","code":"timeout|model_error|app_error|...","id":ID}`,
+  `app_error` an app that failed, which fails that request alone. A write
+  the peer does not take in 15 s ends the stream.
 - Two sets of limits, each a burst, the time one more comes back, and
   requests a UTC day: a client's own (an address; IPv6 by its /64), and the
   app's across its clients, so that a crowd of first requests cannot hold the
@@ -56,6 +59,13 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 - A client holds one place in line at most, the line holds `waiting` places
   across apps, and one request runs at a time. A request's `deadline` covers
   its wait in line.
+- What one request can cost: lwdescribe's text, cleaned (`gate.Clean`: hidden
+  characters gone, at most 4 combining marks in a row, `<|` `|>` and fences
+  of three angle brackets broken, for no visitor to write a model's markup),
+  at most `max_chars` and `max_lines`; at most two model calls (one repair),
+  each answer at most `max_tokens` (240) and 12 lines, a repeatable key 8
+  values; `lw --dump` at most 10 s. A request that leaves stops its model
+  call.
 
 ## Build
 
@@ -105,7 +115,7 @@ template is applied, and through rc.conf after:
 
 - `NGINX_ADDR`, the address the proxy connects from as the jail sees it: the
   one source ipfw admits to 8888 and the one proxy whose `X-Real-IP` llmgate
-  believes.
+  believes. ipfw lets the `llmgate` user open no connection out at all.
 - The jail's own address, which Bastille knows: llmgate's `listen`.
 - `MODEL`, pulled once (default `qwen3:1.7b`): `model.name`.
 - Anything else: `LLMGATE_` variables over `llmgate.toml`, by path, in the
@@ -143,9 +153,14 @@ map $request_method $llm_key {
     GET     "";
     default $remote_addr;    # $proxy_protocol_addr behind PROXY protocol
 }
+map $request_method $llm_probe {
+    GET     $remote_addr;    # the same address as above
+    default "";
+}
 limit_req_zone $llm_key zone=llm:1m rate=6r/m;
+limit_req_zone $llm_probe zone=llm_probe:1m rate=60r/m;
 upstream llm_gate {
-    server JAIL_ADDR:8888;
+    server JAIL_ADDR:8888 max_conns=16;    # the line's places and the probes
     keepalive 4;
 }
 ```
@@ -162,6 +177,7 @@ location /PREFIX/ {
     proxy_read_timeout 60s;
     client_max_body_size 8k;
     limit_req zone=llm burst=3 nodelay;
+    limit_req zone=llm_probe burst=20 nodelay;
     limit_req_status 429;
 }
 ```

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -36,15 +37,24 @@ func Hidden(r rune) bool {
 	return unicode.In(r, unicode.Cf, unicode.Co, unicode.Variation_Selector) || unicode.IsControl(r)
 }
 
-// Clean keeps letters, marks, numbers, punctuation, symbols, single spaces
-// and at most maxLines lines, and drops what is Hidden
+// Clean keeps letters, marks (4 in a row at most), numbers, punctuation,
+// symbols, single spaces and at most maxLines lines, drops what is Hidden,
+// and breaks the markup a model reads as its own: the <| |> of a chat
+// template's special tokens, then <<< and >>>, which fence a prompt's text
 func Clean(s string, maxRunes, maxLines int) (string, error) {
 	if !utf8.ValidString(s) {
 		return "", ErrText
 	}
 	var b []byte
-	lines := 0
+	lines, marks := 0, 0
 	for _, r := range s {
+		if unicode.Is(unicode.M, r) {
+			if marks++; marks > 4 {
+				continue
+			}
+		} else if !Hidden(r) {
+			marks = 0
+		}
 		switch {
 		case r == '\n':
 			if lines++; lines >= maxLines {
@@ -61,11 +71,17 @@ func Clean(s string, maxRunes, maxLines int) (string, error) {
 		}
 	}
 	out := strings.TrimSpace(string(b))
+	for strings.Contains(out, "<|") || strings.Contains(out, "|>") { // <|| is <| again after one pass
+		out = strings.NewReplacer("<|", "<", "|>", ">").Replace(out)
+	}
+	out = fenceRE.ReplaceAllStringFunc(out, func(m string) string { return m[:2] })
 	if n := utf8.RuneCountInString(out); n == 0 || n > maxRunes {
 		return "", ErrText
 	}
 	return out, nil
 }
+
+var fenceRE = regexp.MustCompile(`<{3,}|>{3,}`)
 
 // Limits are a pace and a day's cap: a burst of requests and the time one
 // more comes back, no pace at a burst of 0, and requests a UTC day, no cap

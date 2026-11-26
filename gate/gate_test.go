@@ -166,6 +166,7 @@ func TestRefusalsCarryTheirStatusAndCode(t *testing.T) {
 		{"DELETE", "/echo", "", "", 405, "method_not_allowed"},
 		{"GET", "/echo/other", "", "", 404, "not_found"},
 		{"POST", "/echo/guide", "application/json", `{}`, 405, "method_not_allowed"},
+		{"POST", "/echo", "application/json", "{\"text\":\"\xff hi\"}", 400, "invalid_request"},
 	} {
 		req, _ := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(c.body))
 		req.Header.Set("Content-Type", c.ctype)
@@ -178,8 +179,8 @@ func TestRefusalsCarryTheirStatusAndCode(t *testing.T) {
 		}
 		json.NewDecoder(res.Body).Decode(&out)
 		res.Body.Close()
-		if res.StatusCode != c.status || out.Error.Code != c.code {
-			t.Errorf("%s %s: %d %q, want %d %q", c.method, c.path, res.StatusCode, out.Error.Code, c.status, c.code)
+		if res.StatusCode != c.status || out.Error.Code != c.code || res.Header.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s %s: %d %q %v, want %d %q", c.method, c.path, res.StatusCode, out.Error.Code, res.Header, c.status, c.code)
 		}
 	}
 }
@@ -261,5 +262,24 @@ func TestTheAppsPaceHoldsAcrossClientsAndSparesTheirOwn(t *testing.T) {
 	time.Sleep(350 * time.Millisecond)
 	if status, code := post("203.0.113.2"); status != 200 {
 		t.Errorf("the second client once the app has room: %d %q, want its own request back", status, code)
+	}
+}
+
+// panics is a model whose every chat panics, as a bug in an app would
+type panics struct{}
+
+func (panics) Name() string                    { return "panics" }
+func (panics) Ready(ctx context.Context) error { return nil }
+func (panics) Chat(context.Context, model.Request) (model.Answer, error) {
+	panic("a bug")
+}
+
+// An app that panics fails its own request; the gate goes on to the next
+func TestAPanicFailsItsRequestAlone(t *testing.T) {
+	srv, _ := open(t, panics{}, t.TempDir())
+	for _, real := range []string{"203.0.113.1", "203.0.113.2"} {
+		if kinds, last := events(context.Background(), srv.URL, real, `{"text":"hi"}`); kinds != "queued,running,error" || last["code"] != "app_error" {
+			t.Errorf("%s: %s %v", real, kinds, last)
+		}
 	}
 }

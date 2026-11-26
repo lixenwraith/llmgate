@@ -10,6 +10,9 @@ ipfw -q add 100 allow all from any to any via lo0
 ipfw -q add 200 check-state
 ipfw -q add 300 allow tcp from any to any established
 
+# llmgate needs none out: a hijacked gate reaches nothing
+ipfw -q add 350 deny log ip from me to any uid llmgate
+
 # Allow outbound: pkg updates and model pulls
 ipfw -q add 400 allow tcp from me to any setup keep-state
 ipfw -q add 500 allow udp from me to any keep-state

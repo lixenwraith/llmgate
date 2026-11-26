@@ -151,10 +151,10 @@ func run(path string, check bool, eval string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// requests share ctx: a signal ends waiting and running ones at once
-	servers := []*http.Server{{Addr: cfg.Listen, Handler: s, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 75 * time.Second,
+	servers := []*http.Server{{Addr: cfg.Listen, Handler: s, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 75 * time.Second, MaxHeaderBytes: 64 << 10,
 		BaseContext: func(net.Listener) context.Context { return ctx }}}
 	if cfg.Admin != "" {
-		servers = append(servers, &http.Server{Addr: cfg.Admin, Handler: s.Status(), ReadHeaderTimeout: 5 * time.Second})
+		servers = append(servers, &http.Server{Addr: cfg.Admin, Handler: s.Status(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 8 << 10})
 	}
 	failed := make(chan error, len(servers))
 	for _, srv := range servers {

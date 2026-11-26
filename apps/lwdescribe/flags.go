@@ -280,7 +280,7 @@ func (l *language) jsonSchema(mode string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("constrain %q: one of patterns, array, none", mode)
 	}
 	return json.Marshal(map[string]any{"type": "object", "additionalProperties": false, "required": []string{"flags"},
-		"properties": map[string]any{"flags": map[string]any{"type": "array", "maxItems": 40, "items": items}}})
+		"properties": map[string]any{"flags": map[string]any{"type": "array", "maxItems": 12, "items": items}}})
 }
 
 // check holds an answer to the language, as the schema would have: a
@@ -304,8 +304,8 @@ func (l *language) check(flags []string) string {
 // settle holds a draft to its description, by code, where the answer is
 // one: values trimmed and defaults left out; a file the description names,
 // split into its folder and name; a file key, auth or TLS the description
-// gives no ground for, dropped; then TLS that scram or mtls need, a network
-// given as a listener's host admitted by acl, a client certificate's mtls
+// gives no ground for, dropped; then a client certificate's mtls, the TLS
+// scram and mtls need, a network given as a listener's host admitted by acl,
 // and a listener's certificate made. It returns the lines it changed.
 func (l *language) settle(flags []string, text string) ([]string, int) {
 	named, files := described(text)
@@ -337,6 +337,9 @@ func (l *language) settle(flags []string, text string) ([]string, int) {
 		if !secure && get(kv, "auth.type") == "" {
 			kv = drop(kv, "tls.")
 		}
+		if !o.listens && get(kv, "auth.type") == "" && get(kv, "tls.cert_file") != "" && get(kv, "tls.key_file") != "" {
+			kv = set(kv, "auth.type", "mtls")
+		}
 		if a := get(kv, "auth.type"); (a == "scram" || a == "mtls") && get(kv, "tls.enabled") != "true" {
 			kv = set(kv, "tls.enabled", "true")
 		}
@@ -350,9 +353,6 @@ func (l *language) settle(flags []string, text string) ([]string, int) {
 					kv = append(kv, [2]string{"acl.allow", h})
 				}
 			}
-		}
-		if !o.listens && get(kv, "auth.type") == "" && get(kv, "tls.cert_file") != "" && get(kv, "tls.key_file") != "" {
-			kv = set(kv, "auth.type", "mtls")
 		}
 		if o.listens && get(kv, "tls.enabled") == "true" &&
 			get(kv, "tls.cert_file")+get(kv, "tls.self_signed")+get(kv, "tls.issuer_cert_file") == "" {
@@ -369,10 +369,13 @@ func (l *language) settle(flags []string, text string) ([]string, int) {
 // directory that is the file, or a folder the model made up for its name
 func groundFile(kv [][2]string, files map[string]bool) [][2]string {
 	dir, pattern := path.Clean(get(kv, "directory")), get(kv, "pattern")
+	if pattern != "" && files[path.Join(dir, pattern)] {
+		return kv
+	}
 	if files[dir] {
 		return set(set(kv, "directory", path.Dir(dir)), "pattern", path.Base(dir))
 	}
-	if pattern == "" || files[path.Join(dir, pattern)] {
+	if pattern == "" {
 		return kv
 	}
 	var match []string

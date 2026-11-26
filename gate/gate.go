@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"mime"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lixenwraith/llmgate/model"
 	"github.com/lixenwraith/log"
@@ -160,8 +162,14 @@ func (s *Server) warm(ctx context.Context) error {
 // event is one line of the stream; fields hold an outcome's own
 type event map[string]any
 
+// A body has bodyTime to arrive, and each write writeTime to leave, so a
+// slow or stalled peer holds a connection no longer
+const bodyTime, writeTime = 10 * time.Second, 15 * time.Second
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeTime))
 	name, sub, _ := strings.Cut(strings.Trim(r.URL.Path, "/"), "/")
 	a := s.apps[name]
 	if sub != "" {
@@ -237,9 +245,16 @@ func (s *Server) post(w http.ResponseWriter, r *http.Request, a *served) {
 		ref(&Refusal{http.StatusUnsupportedMediaType, "unsupported_media_type"})
 		return
 	}
+	rc := http.NewResponseController(w)
+	rc.SetReadDeadline(time.Now().Add(bodyTime))
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxBody))
-	if err != nil {
+	rc.SetReadDeadline(time.Time{})
+	if _, large := errors.AsType[*http.MaxBytesError](err); large {
 		ref(&Refusal{http.StatusRequestEntityTooLarge, "too_large"})
+		return
+	} else if err != nil || !utf8.Valid(body) {
+		// a JSON decoder would make broken UTF-8 into U+FFFD, past an app's check
+		ref(&Refusal{http.StatusBadRequest, "invalid_request"})
 		return
 	}
 	t, err := a.Take(body)
@@ -274,9 +289,9 @@ func (s *Server) post(w http.ResponseWriter, r *http.Request, a *served) {
 	defer cancel()
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	rc := http.NewResponseController(w)
 	send := func(e event) {
 		data, _ := json.Marshal(e)
+		rc.SetWriteDeadline(time.Now().Add(writeTime))
 		w.Write(append(data, '\n'))
 		rc.Flush()
 	}
@@ -314,6 +329,13 @@ func (s *Server) post(w http.ResponseWriter, r *http.Request, a *served) {
 	}
 	done := make(chan result, 1)
 	go func() {
+		// an app that panics fails its request, not the gate and every other
+		defer func() {
+			if p := recover(); p != nil {
+				s.ops.Error("app panicked", "app", a.Name(), "panic", fmt.Sprint(p))
+				done <- result{nil, &Refusal{http.StatusInternalServerError, "app_error"}}
+			}
+		}()
 		fields, err := t.Run(ctx, s.model)
 		done <- result{fields, err}
 	}()
