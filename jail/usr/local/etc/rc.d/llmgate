@@ -1,0 +1,46 @@
+#!/bin/sh
+
+# PROVIDE: llmgate
+# REQUIRE: LOGIN llm
+# KEYWORDS: shutdown
+#
+# llmgate_enable (bool):	The gate from web pages to the model. Default: NO
+# llmgate_config (str):	Its configuration.
+#			Default: /usr/local/etc/llmgate/llmgate.toml
+# llmgate_env (str):	LLMGATE_ variables over the file (LLMGATE_MODEL_THREADS=6).
+
+. /etc/rc.subr
+
+name=llmgate
+rcvar=llmgate_enable
+desc="The gate from web pages to the local model"
+
+load_rc_config $name
+
+: ${llmgate_enable:="NO"}
+: ${llmgate_config:="/usr/local/etc/llmgate/llmgate.toml"}
+
+# Its own logs are in /var/log/llmgate; what it prints, a refusal to start
+# or a crash, goes to syslog. start checks the configuration first, so a bad
+# one fails here rather than in a restart loop.
+llmgate_user=llmgate
+pidfile=/var/run/llmgate/llmgate.pid
+command=/usr/sbin/daemon
+command_args="-r -R 5 -S -T ${name} -P ${pidfile} -t ${name} /usr/local/bin/llmgate -c ${llmgate_config}"
+required_files=${llmgate_config}
+start_precmd=llmgate_prestart
+extra_commands=check
+check_cmd=llmgate_check
+
+llmgate_prestart()
+{
+	install -d -o llmgate -g llmgate -m 0750 /var/run/llmgate /var/log/llmgate
+	llmgate_check
+}
+
+llmgate_check()
+{
+	su -m llmgate -c "${llmgate_env:+env ${llmgate_env} }/usr/local/bin/llmgate -c ${llmgate_config} -check"
+}
+
+run_rc_command "$1"
