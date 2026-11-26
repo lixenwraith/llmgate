@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -78,8 +79,8 @@ type example struct {
 
 // New reads lw's version and schema, renders the prompt around the catalog,
 // for the model here and as the guide for a visitor's own, and refuses to
-// start on an example the language or lw --dump refuses: a wrong example
-// teaches the model a wrong answer
+// start on an example that fails held: a wrong example teaches the model a
+// wrong answer
 func New(cfg Config) (*App, error) {
 	a := &App{cfg: cfg}
 	version, err := a.lw(context.Background(), "--version")
@@ -109,23 +110,15 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := a.held("examples.toml", examples); err != nil {
+		return nil, err
+	}
 	terms := func(answer, decline string) string {
 		return strings.NewReplacer("{{answer}}", answer, "{{decline}}", decline, "{{catalog}}", a.lang.catalog).Replace(prompt)
 	}
 	a.prefix = []model.Message{{Role: "system", Content: terms(gateAnswer, gateDecline)}}
 	var shown strings.Builder
-	for i, e := range examples {
-		if len(e.Flags) > 0 {
-			problems := a.lang.check(e.Flags)
-			if problems == "" {
-				problems, err = a.dump(context.Background(), e.Flags)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("examples.toml example %d: %w", i+1, err)
-			} else if problems != "" {
-				return nil, fmt.Errorf("examples.toml example %d: %s", i+1, problems)
-			}
-		}
+	for _, e := range examples {
 		answer, _ := json.Marshal(map[string][]string{"flags": append([]string{}, e.Flags...)})
 		a.prefix = append(a.prefix, userTurn(e.Text), model.Message{Role: "assistant", Content: string(answer)})
 		lines := strings.Join(e.Flags, "\n")
@@ -138,6 +131,99 @@ func New(cfg Config) (*App, error) {
 		"{{examples}}", strings.TrimSpace(shown.String())).Replace(guide))
 	a.examples = len(examples)
 	return a, nil
+}
+
+// held refuses an entry of name whose flags are not an answer: one the
+// language or lw --dump refuses, or one settle would change
+func (a *App) held(name string, entries []example) error {
+	for i, e := range entries {
+		if len(e.Flags) == 0 {
+			continue
+		}
+		problems := a.lang.check(e.Flags)
+		if _, n := a.lang.settle(e.Flags, e.Text); problems == "" && n > 0 {
+			problems = "settle would change it"
+		}
+		if problems == "" {
+			var err error
+			if problems, err = a.dump(context.Background(), e.Flags); err != nil {
+				return fmt.Errorf("%s example %d: %w", name, i+1, err)
+			}
+		}
+		if problems != "" {
+			return fmt.Errorf("%s example %d: %s", name, i+1, problems)
+		}
+	}
+	return nil
+}
+
+// Eval drafts each description of an eval file, examples the model never
+// sees, with m as a request would, and compares the draft with the entry's
+// flags, pipeline names aside. It writes a line a case and the count.
+func (a *App) Eval(ctx context.Context, m model.Model, path string, deadline time.Duration, w io.Writer) error {
+	cases, err := readExamples(path)
+	if err != nil {
+		return err
+	}
+	if err := a.held(filepath.Base(path), cases); err != nil {
+		return err
+	}
+	start := time.Now()
+	if err := a.Warm(ctx, m); err != nil {
+		return fmt.Errorf("warm-up: %w", err)
+	}
+	fmt.Fprintf(w, "warmed in %.1fs\n", time.Since(start).Seconds())
+	pass := 0
+	for i, c := range cases {
+		body, _ := json.Marshal(map[string]string{"text": c.Text})
+		t, err := a.Take(body)
+		if err != nil {
+			return fmt.Errorf("example %d: %w", i+1, err)
+		}
+		cctx, cancel := context.WithTimeout(ctx, deadline)
+		began := time.Now()
+		out, err := t.Run(cctx, m)
+		cancel()
+		got, _ := out["flags"].(string)
+		problems, _ := out["problems"].(string)
+		ok := err == nil && problems == "" && slices.Equal(unnamed(strings.Split(got, "\n")), unnamed(c.Flags))
+		mark := "FAIL"
+		if ok {
+			pass, mark = pass+1, "pass"
+		}
+		fmt.Fprintf(w, "%3d %s %5.1fs %.70s\n", i+1, mark, time.Since(began).Seconds(), c.Text)
+		switch {
+		case ok:
+		case err != nil:
+			fmt.Fprintf(w, "      error %v\n", err)
+		default:
+			for _, f := range strings.Split(got, "\n") {
+				fmt.Fprintf(w, "      got  %s\n", f)
+			}
+			for _, f := range c.Flags {
+				fmt.Fprintf(w, "      want %s\n", f)
+			}
+			if problems != "" {
+				fmt.Fprintf(w, "      lw   %s\n", strings.ReplaceAll(problems, "\n", " | "))
+			}
+		}
+	}
+	fmt.Fprintf(w, "%d/%d pass in %.0fs\n", pass, len(cases), time.Since(start).Seconds())
+	return nil
+}
+
+// unnamed is flags with every pipeline's name left out, "" lines dropped
+func unnamed(flags []string) []string {
+	var out []string
+	for _, f := range flags {
+		if strings.HasPrefix(f, "--pipeline ") {
+			f = "--pipeline"
+		}
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // asset is a text of the assets that names every placeholder it must hold

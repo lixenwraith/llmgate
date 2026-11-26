@@ -34,37 +34,79 @@ func testLanguage(t *testing.T) *language {
 	return l
 }
 
-// Examples are drafts settle leaves as they are; with LW set to an lw
-// binary, New also holds each to lw --dump.
+// The examples and the eval cases are drafts the model may write and settle
+// leaves as they are; with LW set to an lw binary, held also puts each to
+// lw --dump.
 func TestExamplesAreDraftsTheModelMayWriteAndLWTakes(t *testing.T) {
 	l := testLanguage(t)
 	var model []*regexp.Regexp
 	for _, p := range l.patterns {
 		model = append(model, regexp.MustCompile(p.json))
 	}
-	examples, err := readExamples(filepath.Join(assets, "examples.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, e := range examples {
-		if p := l.check(e.Flags); p != "" {
-			t.Errorf("example %d: %s", i+1, p)
+	for _, name := range []string{"examples.toml", "eval.toml"} {
+		entries, err := readExamples(filepath.Join(assets, name))
+		if err != nil {
+			t.Fatal(err)
 		}
-		if settled, n := l.settle(e.Flags, e.Text); n > 0 {
-			t.Errorf("example %d teaches what settle would change: %v", i+1, settled)
+		for i, e := range entries {
+			if p := l.check(e.Flags); len(e.Flags) > 0 && p != "" {
+				t.Errorf("%s %d: %s", name, i+1, p)
+			}
+			if settled, n := l.settle(e.Flags, e.Text); n > 0 {
+				t.Errorf("%s %d is what settle would change: %v", name, i+1, settled)
+			}
+			for _, f := range e.Flags {
+				if !slices.ContainsFunc(model, func(re *regexp.Regexp) bool { return re.MatchString(f) }) {
+					t.Errorf("%s %d: the model's patterns refuse %s", name, i+1, f)
+				}
+			}
 		}
-		for _, f := range e.Flags {
-			if !slices.ContainsFunc(model, func(re *regexp.Regexp) bool { return re.MatchString(f) }) {
-				t.Errorf("example %d: the model's patterns refuse %s", i+1, f)
+		if lw := os.Getenv("LW"); lw != "" {
+			cfg := Defaults()
+			cfg.LW, cfg.Assets, cfg.WorkDir = lw, assets, t.TempDir()
+			app, err := New(cfg)
+			if err == nil {
+				err = app.held(name, entries)
+			}
+			if err != nil {
+				t.Errorf("%s with %s: %v", name, lw, err)
 			}
 		}
 	}
-	if lw := os.Getenv("LW"); lw != "" {
-		cfg := Defaults()
-		cfg.LW, cfg.Assets, cfg.WorkDir = lw, assets, t.TempDir()
-		if _, err := New(cfg); err != nil {
-			t.Errorf("New with %s: %v", lw, err)
-		}
+}
+
+// Eval passes a draft that differs in a pipeline's name alone and a
+// decline asked for, and fails a draft with other flags
+func TestEvalComparesDraftsPipelineNamesAside(t *testing.T) {
+	cfg := Defaults()
+	cfg.LW, cfg.Assets, cfg.WorkDir = fakeLW(t), assets, t.TempDir()
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "eval.toml")
+	os.WriteFile(path, []byte(`[[example]]
+text = "pipe to the terminal"
+flags = ["--pipeline 'a'", "--source 'console'", "--sink 'console'"]
+
+[[example]]
+text = "pipe to tcp locally"
+flags = ["--pipeline 'b'", "--source 'console'", "--sink 'tcp:port=9090,host=127.0.0.1'"]
+
+[[example]]
+text = "a poem"
+flags = []
+`), 0o644)
+	m := &scripted{answers: []string{`{"flags":[]}`, // the warm-up
+		`{"flags":["--pipeline 'other'","--source 'console'","--sink 'console'"]}`,
+		`{"flags":["--pipeline 'b'","--source 'console'","--sink 'console'"]}`,
+		`{"flags":[]}`}}
+	var out strings.Builder
+	if err := app.Eval(context.Background(), m, path, time.Minute, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "2/3 pass") || !strings.Contains(out.String(), "  2 FAIL") {
+		t.Errorf("eval wrote\n%s", out.String())
 	}
 }
 

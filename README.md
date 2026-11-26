@@ -22,7 +22,8 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 - `model/`: the model server, Ollama's chat API: greedy, the model kept loaded
 - `apps/lwdescribe/`: the first app
 - `jail/`: a Bastille template laid out as the jail: `Bastillefile`, rc.d,
-  ipfw, newsyslog, the configuration and the app's prompt, examples and guide
+  ipfw, newsyslog, the configuration and the app's prompt, examples, guide
+  and eval cases
 - `deploy/`: `build.sh` pulls and builds as the checkouts' owner,
   `update.sh` brings a running jail up to the build as root
 
@@ -208,6 +209,17 @@ restarts ipfw or llm when their files changed and llmgate after any change,
 and waits for the gate to open.
 
 ## Operating
+
+- How well the model drafts: `llmgate -eval FILE` drafts each description of
+  an eval file, `[[example]]` entries the model never sees, with the
+  configured model, `lw` and assets as a request would, and compares each
+  draft with the entry's flags, pipeline names aside. It shares the model with
+  the page's requests, a run of the shipped 34 takes minutes, and `LLMGATE_`
+  variables try another model or setting:
+
+  ```sh
+  bastille cmd llm su -m llmgate -c "llmgate -c /usr/local/etc/llmgate/llmgate.toml -eval /usr/local/etc/llmgate/lwdescribe/eval.toml"
+  ```
 
 - A new model: `bastille cmd llm ollama pull NAME`, then
   `LLMGATE_MODEL_NAME=NAME` in `llmgate_env` and llmgate restarted; it warms
