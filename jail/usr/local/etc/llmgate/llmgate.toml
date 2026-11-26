@@ -18,8 +18,9 @@ url = "http://127.0.0.1:11434"
 # The model as Ollama names it (ollama list). One model serves every app.
 name = "${MODEL}"
 # Sent with every request, so every app shares one loaded model: a change of
-# either reloads it. threads: cores the model may use at once, any of them.
-context = 6144
+# either reloads it. context holds an app's prefix, a request and a repair:
+# lwdescribe's is about 6k tokens. threads: cores the model may use at once.
+context = 10240
 threads = 4
 # off sends think=false (models that think unasked), on sends true, "" none.
 think = "off"

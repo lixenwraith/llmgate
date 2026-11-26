@@ -8,48 +8,92 @@ text = "Tail /var/log/app.log and stream only ERROR lines over HTTP on port 8080
 flags = ["--pipeline 'app'", "--source 'file:directory=/var/log,pattern=app.log'", "--filter 'include:patterns=ERROR'", "--sink 'http:port=8080,host=127.0.0.1'"]
 
 [[example]]
+text = "Watch the file /var/log/syslog and print it to the terminal."
+flags = ["--pipeline 'syslog'", "--source 'file:directory=/var/log,pattern=syslog'", "--sink 'console'"]
+
+[[example]]
 text = "Send /var/log/messages from the start of the file to a TCP stream on port 9090 for this machine."
 flags = ["--pipeline 'messages'", "--source 'file:directory=/var/log,pattern=messages,from=start'", "--sink 'tcp:port=9090,host=127.0.0.1'"]
 
 [[example]]
-text = "Read logs piped into standard input and print them to the terminal."
-flags = ["--pipeline 'pipe'", "--source 'console'", "--sink 'console'"]
+text = "stream the file /var/log/maillog, with everything already in it, to my browser"
+flags = ["--pipeline 'maillog'", "--source 'file:directory=/var/log,pattern=maillog,from=start'", "--sink 'http:port=8080,host=127.0.0.1'"]
+
+[[example]]
+text = "Read /home/app/output.txt from the beginning and keep a copy in files named output under /var/log/copies."
+flags = ["--pipeline 'output'", "--source 'file:directory=/home/app,pattern=output.txt,from=start'", "--sink 'file:directory=/var/log/copies,name=output'"]
+
+[[example]]
+text = "Merge /var/log/auth.log and /var/log/cron and show both on standard error."
+flags = ["--pipeline 'merged'", "--source 'file:directory=/var/log,pattern=auth.log'", "--source 'file:directory=/var/log,pattern=cron'", "--sink 'console:target=stderr'"]
 
 [[example]]
 text = "Follow every .log file in /var/log/nginx from the beginning and print each entry as JSON."
 flags = ["--pipeline 'nginx'", "--source 'file:directory=/var/log/nginx,pattern=*.log,from=start'", "--format 'json'", "--sink 'console'"]
 
 [[example]]
+text = "Serve the logs in the folder /srv/app/logs over HTTPS on port 8443 to my LAN, 192.168.1.0/24, and nobody else."
+flags = ["--pipeline 'app'", "--source 'file:directory=/srv/app/logs'", "--sink 'http:port=8443,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,acl.allow=192.168.1.0/24'"]
+
+[[example]]
+text = "Read logs piped into standard input and print them to the terminal."
+flags = ["--pipeline 'pipe'", "--source 'console'", "--sink 'console'"]
+
+[[example]]
 text = "Drop DEBUG and TRACE lines from what I pipe in, and save the rest to /var/log/clean in files named app."
 flags = ["--pipeline 'clean'", "--source 'console'", "--filter 'exclude:patterns=DEBUG,patterns=TRACE'", "--sink 'file:directory=/var/log/clean,name=app'"]
 
 [[example]]
-text = "Serve the logs in /srv/app/logs over HTTPS on port 8443 to my LAN, 192.168.1.0/24, and nobody else."
-flags = ["--pipeline 'app'", "--source 'file:directory=/srv/app/logs'", "--sink 'http:port=8443,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,acl.allow=192.168.1.0/24'"]
+text = "Keep only the lines with both ERROR and payment in them from /var/log/shop/orders.log, on the terminal."
+flags = ["--pipeline 'orders'", "--source 'file:directory=/var/log/shop,pattern=orders.log'", "--filter 'include:patterns=ERROR,patterns=payment,logic=and'", "--sink 'console'"]
 
 [[example]]
-text = "Forward /var/log/app to my aggregator at logs.example.org port 9000 over TLS pinned to sha256//q4RjFRm7cZbPfMBdSkHvC3xwXcU5mTW9u3vh0sQnF2A=, logging in as edge-01 with the password in /etc/logwisp/edge-01.pass."
-flags = ["--pipeline 'edge'", "--source 'file:directory=/var/log/app'", "--sink 'tcp_chain:host=logs.example.org,port=9000,tls.enabled=true,tls.pin_sha256=sha256//q4RjFRm7cZbPfMBdSkHvC3xwXcU5mTW9u3vh0sQnF2A=,auth.type=scram,auth.username=edge-01,auth.password_file=/etc/logwisp/edge-01.pass'"]
-
-[[example]]
-text = "Receive logs from other nodes on port 9000 over TLS, with users from /etc/logwisp/users.toml, and archive them in /var/log/edges."
-flags = ["--pipeline 'aggregator'", "--source 'tcp_chain:port=9000,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/etc/logwisp/users.toml'", "--sink 'file:directory=/var/log/edges,name=edges'"]
+text = "Keep only lines with an HTTP 5xx status, like status=503, from /var/log/web/access.log, written as text lines with their time and level."
+flags = ["--pipeline 'web'", "--source 'file:directory=/var/log/web,pattern=access.log'", "--filter 'include:patterns=status=5[0-9][0-9]'", "--format 'txt'", "--sink 'console'"]
 
 [[example]]
 text = "From standard input, let through at most 100 entries a second with bursts of 200, add a heartbeat every 30 seconds, and serve it as a TCP stream on port 9090 for this machine only."
 flags = ["--pipeline 'stream'", "--source 'console'", "--rate-limit 'entries_per_second=100,burst_entries=200'", "--heartbeat 'interval_ms=30000'", "--sink 'tcp:port=9090,host=127.0.0.1'"]
 
 [[example]]
-text = "Show ERROR lines from /var/log/app on the terminal, and copy everything in /var/log/db to files named db under /var/log/archive."
-flags = ["--pipeline 'errors'", "--source 'file:directory=/var/log/app'", "--filter 'include:patterns=ERROR'", "--sink 'console'", "--pipeline 'db'", "--source 'file:directory=/var/log/db'", "--sink 'file:directory=/var/log/archive,name=db'"]
-
-[[example]]
 text = "Generate random test entries every 100 ms and show them in the browser viewer."
 flags = ["--pipeline 'test'", "--source 'random:interval_ms=100'", "--sink 'http:port=8080,host=127.0.0.1'"]
 
 [[example]]
-text = "Keep only lines with an HTTP 5xx status, like status=503, from /var/log/web/access.log, written as text lines with their time and level."
-flags = ["--pipeline 'web'", "--source 'file:directory=/var/log/web,pattern=access.log'", "--filter 'include:patterns=status=5[0-9][0-9]'", "--format 'txt'", "--sink 'console'"]
+text = "Send /var/log/kern.log to another LogWisp node in a chain."
+flags = ["--pipeline 'kern'", "--source 'file:directory=/var/log,pattern=kern.log'", "--sink 'tcp_chain:host=other-node,port=9000'"]
+
+[[example]]
+text = "Forward everything in /var/log/app to my aggregator at logs.example.org port 9000 over TLS pinned to sha256//q4RjFRm7cZbPfMBdSkHvC3xwXcU5mTW9u3vh0sQnF2A=, logging in as edge-01 with the password in /etc/logwisp/edge-01.pass."
+flags = ["--pipeline 'edge'", "--source 'file:directory=/var/log/app'", "--sink 'tcp_chain:host=logs.example.org,port=9000,tls.enabled=true,tls.pin_sha256=sha256//q4RjFRm7cZbPfMBdSkHvC3xwXcU5mTW9u3vh0sQnF2A=,auth.type=scram,auth.username=edge-01,auth.password_file=/etc/logwisp/edge-01.pass'"]
+
+[[example]]
+text = "Ship /var/log/app/api.log to the collector at 192.0.2.10 over an HTTP chain on port 9443 with TLS, trusting the CA in /etc/logwisp/ca.pem."
+flags = ["--pipeline 'api'", "--source 'file:directory=/var/log/app,pattern=api.log'", "--sink 'http_chain:host=192.0.2.10,port=9443,tls.enabled=true,tls.ca_file=/etc/logwisp/ca.pem'"]
+
+[[example]]
+text = "Forward /var/log/edge to collector.example.org on port 9000 with mutual TLS: my certificate /etc/logwisp/edge.crt and its key /etc/logwisp/edge.key, the server checked against /etc/logwisp/ca.crt."
+flags = ["--pipeline 'edge'", "--source 'file:directory=/var/log/edge'", "--sink 'tcp_chain:host=collector.example.org,port=9000,tls.enabled=true,tls.cert_file=/etc/logwisp/edge.crt,tls.key_file=/etc/logwisp/edge.key,tls.ca_file=/etc/logwisp/ca.crt,auth.type=mtls'"]
+
+[[example]]
+text = "Receive logs from other nodes on port 9000 over TLS, with users from /etc/logwisp/users.toml, and archive them in /var/log/edges."
+flags = ["--pipeline 'aggregator'", "--source 'tcp_chain:port=9000,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/etc/logwisp/users.toml'", "--sink 'file:directory=/var/log/edges,name=edges'"]
+
+[[example]]
+text = "Accept chain nodes on port 9000 over mutual TLS, with the certificate /etc/logwisp/server.crt and key /etc/logwisp/server.key, only from clients signed by /etc/logwisp/ca.crt, and print what arrives."
+flags = ["--pipeline 'collector'", "--source 'tcp_chain:port=9000,host=0.0.0.0,tls.enabled=true,tls.cert_file=/etc/logwisp/server.crt,tls.key_file=/etc/logwisp/server.key,tls.client_auth=true,tls.client_ca_file=/etc/logwisp/ca.crt,auth.type=mtls'", "--sink 'console'"]
+
+[[example]]
+text = "Take batches other nodes post over HTTP on port 9080 and keep them in files named nodes under /var/log/nodes."
+flags = ["--pipeline 'ingest'", "--source 'http_chain:port=9080,host=0.0.0.0'", "--sink 'file:directory=/var/log/nodes,name=nodes'"]
+
+[[example]]
+text = "Serve /var/log/secure as a TCP stream over TLS on port 9090 to 10.1.0.0/16 but not 10.1.5.0/24, for the users in /etc/logwisp/readers.toml."
+flags = ["--pipeline 'secure'", "--source 'file:directory=/var/log,pattern=secure'", "--sink 'tcp:port=9090,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/etc/logwisp/readers.toml,acl.allow=10.1.0.0/16,acl.deny=10.1.5.0/24'"]
+
+[[example]]
+text = "Show ERROR lines from /var/log/app on the terminal, and copy everything in /var/log/db to files named db under /var/log/archive."
+flags = ["--pipeline 'errors'", "--source 'file:directory=/var/log/app'", "--filter 'include:patterns=ERROR'", "--sink 'console'", "--pipeline 'db'", "--source 'file:directory=/var/log/db'", "--sink 'file:directory=/var/log/archive,name=db'"]
 
 [[example]]
 text = "What will the weather be like in Paris tomorrow?"
