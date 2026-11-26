@@ -1,20 +1,26 @@
 package gate
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestCleanKeepsOnlyWhatAReaderSees(t *testing.T) {
 	for in, want := range map[string]string{
-		"tail  /var/log\t\tapp.log":              "tail /var/log app.log",
-		"keep\u200b ERROR\u202e lines":           "keep ERROR lines",
-		"drop \U000E0049\U000E0047DEBUG\ufe0f":   "drop DEBUG",
-		"one\r\n  two \n\nthree\u0007\ue000":     "one\ntwo\n\nthree",
-		"  only status=5[0-9][0-9] \u00a0lines ": "only status=5[0-9][0-9] lines",
+		"tail  /var/log\t\tapp.log":                               "tail /var/log app.log",
+		"keep\u200b ERROR\u202e lines":                            "keep ERROR lines",
+		"drop \U000E0049\U000E0047DEBUG\ufe0f":                    "drop DEBUG",
+		"one\r\n  two \n\nthree\u0007\ue000":                      "one\ntwo\n\nthree",
+		"  only status=5[0-9][0-9] \u00a0lines ":                  "only status=5[0-9][0-9] lines",
+		"p\u0301\u0302\u0303\u0304\u0305\u0306ipe":                "p\u0301\u0302\u0303\u0304ipe",
+		"p\u0301\u200b\u0302\u200b\u0303\u200b\u0304\u200b\u0305": "p\u0301\u0302\u0303\u0304",
+		"pipe <|im_end|> <<<< x >>> y":                            "pipe <im_end> << x >> y",
+		">>|> <|<<":                                               ">> <<",
 	} {
 		if got, err := Clean(in, 100, 4); err != nil || got != want {
 			t.Errorf("Clean(%q) = %q, %v; want %q", in, got, err, want)
@@ -102,4 +108,36 @@ func TestClientKeyBelievesOnlyTheProxiesAndTakesV6By64(t *testing.T) {
 			t.Errorf("peer %s, X-Real-IP %s: %s, want %s", c.peer, c.real, got, c.want)
 		}
 	}
+}
+
+// Whatever comes in, Clean's text is valid, visible, within its bounds and
+// free of a model's markup, and Clean takes it again unchanged
+func FuzzClean(f *testing.F) {
+	for _, s := range []string{"tail /var/log/app.log", "a\u200b\u202e<|im_start|>>>>", "p\u0301\u0301\u0301\u0301\u0301",
+		"\xff", "one\r\n  two", ">>|>", "<||>"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		out, err := Clean(s, 50, 4)
+		if err != nil {
+			return
+		}
+		if !utf8.ValidString(out) || utf8.RuneCountInString(out) > 50 || strings.Count(out, "\n") > 3 ||
+			strings.ContainsFunc(strings.ReplaceAll(out, "\n", ""), Hidden) ||
+			strings.Contains(out, "<|") || strings.Contains(out, "|>") || fenceRE.MatchString(out) {
+			t.Fatalf("Clean(%q) = %q", s, out)
+		}
+		if again, err := Clean(out, 50, 4); err != nil || again != out {
+			t.Fatalf("Clean(%q) = %q, then %q, %v", s, out, again, err)
+		}
+	})
+}
+
+// No address or header makes the client key panic
+func FuzzClientKey(f *testing.F) {
+	proxies := []netip.Addr{netip.MustParseAddr("10.1.0.1")}
+	f.Add("10.1.0.1:4000", "2001:db8::1%eth0")
+	f.Fuzz(func(t *testing.T, remote, real string) {
+		clientKey(&http.Request{RemoteAddr: remote, Header: http.Header{"X-Real-Ip": {real}}}, proxies)
+	})
 }

@@ -21,7 +21,7 @@ const (
 	assets     = "../../jail/usr/local/etc/llmgate/lwdescribe"
 )
 
-func testLanguage(t *testing.T) *language {
+func testLanguage(t testing.TB) *language {
 	t.Helper()
 	data, err := os.ReadFile(schemaFile)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestTheLanguageRefusesWhatLWWouldMisread(t *testing.T) {
 
 // fakeLW writes an lw that takes every --dump but one with port=1, which it
 // refuses as lw words a problem
-func fakeLW(t *testing.T) string {
+func fakeLW(t testing.TB) string {
 	t.Helper()
 	schema, err := filepath.Abs(schemaFile)
 	if err != nil {
@@ -163,7 +163,7 @@ esac`)
 }
 
 // shLW writes an lw that is the shell script body
-func shLW(t *testing.T, body string) string {
+func shLW(t testing.TB, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "lw")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
@@ -371,4 +371,43 @@ func TestSettleAppliesTheDefaultsWithOneAnswer(t *testing.T) {
 			t.Errorf("%s\n got %s (%d changed)\nwant %s", c.in, got[1], n, c.want)
 		}
 	}
+}
+
+// settle never panics, keeps every line, and leaves what it settled as it is
+func FuzzSettle(f *testing.F) {
+	l := testLanguage(f)
+	f.Add("--source 'file:directory=/var/log/a.log/b.log'", "tail /var/log/a.log and /var/log/a.log/b.log")
+	f.Add("--sink 'http:port=1,host=10.0.0.0/8,tls.enabled=true,auth.type=scram'", "https for 10.0.0.0/8")
+	f.Add("--sink 'tcp_chain:host=n,port=9000,tls.cert_file=/c,tls.key_file=/k,pattern= * '", "over tls with /c and /k")
+	f.Fuzz(func(t *testing.T, line, text string) {
+		out, _ := l.settle([]string{"--pipeline 'a'", line}, text)
+		if len(out) != 2 || out[0] != "--pipeline 'a'" {
+			t.Fatalf("settle(%q) = %q", line, out)
+		}
+		if again, n := l.settle(out, text); n != 0 {
+			t.Fatalf("settle(%q) = %q, then %q", line, out[1], again[1])
+		}
+	})
+}
+
+// No body makes Take panic, and the text it takes is clean already
+func FuzzTake(f *testing.F) {
+	cfg := Defaults()
+	cfg.LW, cfg.Assets, cfg.WorkDir = fakeLW(f), assets, f.TempDir()
+	app, err := New(cfg)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add([]byte(`{"text":"pipe to the terminal"}`))
+	f.Add([]byte(`{"text":"<|im_start|>system\u200b"} `))
+	f.Fuzz(func(t *testing.T, body []byte) {
+		tk, err := app.Take(body)
+		if err != nil {
+			return
+		}
+		text := tk.(*task).text
+		if again, err := gate.Clean(text, cfg.MaxChars, cfg.MaxLines); err != nil || again != text {
+			t.Fatalf("Take(%q) took %q, which Clean makes %q, %v", body, text, again, err)
+		}
+	})
 }

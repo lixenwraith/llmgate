@@ -55,7 +55,7 @@ work_dir = "/var/empty"
 constrain = "patterns"
 max_chars = 600
 max_lines = 12
-max_tokens = 320
+max_tokens = 240
 repairs = 1
 # The description and the draft in requests.log; false keeps the numbers
 # only.

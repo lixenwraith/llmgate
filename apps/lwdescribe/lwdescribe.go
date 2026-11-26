@@ -47,7 +47,7 @@ type Config struct {
 
 func Defaults() Config {
 	return Config{Enabled: true, LW: "/usr/local/bin/lw", Assets: "/usr/local/etc/llmgate/lwdescribe",
-		WorkDir: "/var/empty", Constrain: "patterns", MaxChars: 600, MaxLines: 12, MaxTokens: 320, Repairs: 1,
+		WorkDir: "/var/empty", Constrain: "patterns", MaxChars: 600, MaxLines: 12, MaxTokens: 240, Repairs: 1,
 		RecordText: true, Limits: gate.Admission{Client: gate.Limits{Burst: 1, Refill: 10 * time.Second, Daily: 20},
 			App: gate.Limits{Burst: 6, Refill: 20 * time.Second, Daily: 500}}}
 }
