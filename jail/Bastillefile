@@ -30,6 +30,7 @@ CP usr/local/etc/llmgate/llmgate.toml /usr/local/etc/llmgate/llmgate.toml
 CP usr/local/etc/llmgate/lwdescribe/prompt.md /usr/local/etc/llmgate/lwdescribe/prompt.md
 CP usr/local/etc/llmgate/lwdescribe/examples.toml /usr/local/etc/llmgate/lwdescribe/examples.toml
 CP usr/local/etc/llmgate/lwdescribe/guide.md /usr/local/etc/llmgate/lwdescribe/guide.md
+CP usr/local/etc/llmgate/lwdescribe/eval.toml /usr/local/etc/llmgate/lwdescribe/eval.toml
 CMD chown -R root:wheel /etc/ipfw.rules /usr/local/bin/llmgate /usr/local/bin/lw /usr/local/etc/rc.d/llm /usr/local/etc/rc.d/llmgate /usr/local/etc/newsyslog.conf.d/llm.conf /usr/local/etc/llmgate
 CMD chmod 0555 /usr/local/bin/llmgate /usr/local/bin/lw /usr/local/etc/rc.d/llm /usr/local/etc/rc.d/llmgate && chmod -R a+rX,go-w /etc/ipfw.rules /usr/local/etc/newsyslog.conf.d/llm.conf /usr/local/etc/llmgate
 RENDER /usr/local/etc/llmgate/llmgate.toml

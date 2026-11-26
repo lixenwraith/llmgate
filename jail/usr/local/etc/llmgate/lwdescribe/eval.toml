@@ -1,0 +1,140 @@
+# Descriptions the model never sees, each with the flags it should draft:
+# llmgate -eval drafts them with the configured model and compares, pipeline
+# names aside. Held to the language, lw --dump and settle as the examples
+# are. An entry with no flags is a decline.
+
+[[example]]
+text = "stream logs from a file /var/log/dmesg to localhost port 12000 http from the start of the file"
+flags = ["--pipeline 'dmesg-http'", "--source 'file:directory=/var/log,pattern=dmesg,from=start'", "--sink 'http:port=12000,host=127.0.0.1'"]
+
+[[example]]
+text = "stream file /var/log/dmesg from the beginning to another logwisp node in a chain"
+flags = ["--pipeline 'dmesg-chain'", "--source 'file:directory=/var/log,pattern=dmesg,from=start'", "--sink 'tcp_chain:host=other-node,port=9000'"]
+
+[[example]]
+text = "forward /var/log/daemon.log to 192.0.2.20 port 7000 over TLS, checking the server with /etc/ssl/ca.crt, as user node-7 with the password in /etc/lw/node-7.pass"
+flags = ["--pipeline 'daemon-scram'", "--source 'file:directory=/var/log,pattern=daemon.log'", "--sink 'tcp_chain:host=192.0.2.20,port=7000,tls.enabled=true,tls.ca_file=/etc/ssl/ca.crt,auth.type=scram,auth.username=node-7,auth.password_file=/etc/lw/node-7.pass'"]
+
+[[example]]
+text = "show everything in /var/log/postgresql in the browser viewer over HTTPS on port 9443 for 10.0.0.0/8 only"
+flags = ["--pipeline 'postgres-https'", "--source 'file:directory=/var/log/postgresql'", "--sink 'http:port=9443,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,acl.allow=10.0.0.0/8'"]
+
+[[example]]
+text = "stream logs from a file /var/log/dmesg to localhost port 12000 http from the start of the file, and forward /var/log/daemon.log to 192.0.2.20 port 7000 over TLS, checking the server with /etc/ssl/ca.crt, as user node-7 with the password in /etc/lw/node-7.pass"
+flags = ["--pipeline 'mixed'", "--source 'file:directory=/var/log,pattern=dmesg,from=start'", "--sink 'http:port=12000,host=127.0.0.1'", "--pipeline 'mixed-2'", "--source 'file:directory=/var/log,pattern=daemon.log'", "--sink 'tcp_chain:host=192.0.2.20,port=7000,tls.enabled=true,tls.ca_file=/etc/ssl/ca.crt,auth.type=scram,auth.username=node-7,auth.password_file=/etc/lw/node-7.pass'"]
+
+[[example]]
+text = "tail /opt/svc/logs/worker.out and print lines containing panic"
+flags = ["--pipeline 'worker-panic'", "--source 'file:directory=/opt/svc/logs,pattern=worker.out'", "--filter 'include:patterns=panic'", "--sink 'console'"]
+
+[[example]]
+text = "send the logs in /var/log/httpd to my central server logs.internal on port 9000"
+flags = ["--pipeline 'httpd-central'", "--source 'file:directory=/var/log/httpd'", "--sink 'tcp_chain:host=logs.internal,port=9000'"]
+
+[[example]]
+text = "serve /var/log/messages over tcp on port 7777 to the network with a self-signed certificate"
+flags = ["--pipeline 'messages-tcp-tls'", "--source 'file:directory=/var/log,pattern=messages'", "--sink 'tcp:port=7777,host=0.0.0.0,tls.enabled=true,tls.self_signed=true'"]
+
+[[example]]
+text = "collect from other logwisp nodes on port 9100 with tls using /etc/lw/srv.crt and /etc/lw/srv.key and write them to /data/logs as files named fleet"
+flags = ["--pipeline 'fleet-tls-files'", "--source 'tcp_chain:port=9100,host=0.0.0.0,tls.enabled=true,tls.cert_file=/etc/lw/srv.crt,tls.key_file=/etc/lw/srv.key'", "--sink 'file:directory=/data/logs,name=fleet'"]
+
+[[example]]
+text = "pipe stdin to the browser on port 3000 for my LAN and hide lines with healthcheck"
+flags = ["--pipeline 'stdin-lan-hide'", "--source 'console'", "--filter 'exclude:patterns=healthcheck'", "--sink 'http:port=3000,host=0.0.0.0'"]
+
+[[example]]
+text = "read all files ending in .json under /srv/api/log from the beginning, as json, to standard error"
+flags = ["--pipeline 'json-stderr'", "--source 'file:directory=/srv/api/log,pattern=*.json,from=start'", "--format 'json'", "--sink 'console:target=stderr'"]
+
+[[example]]
+text = "Forward /var/log/nginx/error.log over HTTP to the collector at 198.51.100.7 port 8443 using mutual TLS with /etc/lw/c.crt /etc/lw/c.key and CA /etc/lw/ca.crt"
+flags = ["--pipeline 'nginx-mtls-http'", "--source 'file:directory=/var/log/nginx,pattern=error.log'", "--sink 'http_chain:host=198.51.100.7,port=8443,tls.enabled=true,tls.cert_file=/etc/lw/c.crt,tls.key_file=/etc/lw/c.key,tls.ca_file=/etc/lw/ca.crt,auth.type=mtls'"]
+
+[[example]]
+text = "receive logs from edge nodes on 9000, only from 203.0.113.0/24, users from /etc/lw/users.toml, and show them on screen"
+flags = ["--pipeline 'edge-scram-acl'", "--source 'tcp_chain:port=9000,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/etc/lw/users.toml,acl.allow=203.0.113.0/24'", "--sink 'console'"]
+
+[[example]]
+text = "write me a poem about cats"
+flags = []
+
+[[example]]
+text = "tail the file /srv/game/server.log and send ERROR or FATAL lines to the browser viewer, local only"
+flags = ["--pipeline 'game-errors'", "--source 'file:directory=/srv/game,pattern=server.log'", "--filter 'include:patterns=ERROR,patterns=FATAL'", "--sink 'http:port=8080,host=127.0.0.1'"]
+
+[[example]]
+text = "ship everything under /var/log/remote from the start to node 10.2.0.5 on port 9100 in a chain"
+flags = ["--pipeline 'remote-chain'", "--source 'file:directory=/var/log/remote,from=start'", "--sink 'tcp_chain:host=10.2.0.5,port=9100'"]
+
+[[example]]
+text = "listen for logwisp nodes over https on port 8443 and save what they send to /backup/logs as files named nodes"
+flags = ["--pipeline 'https-ingest'", "--source 'http_chain:port=8443,host=0.0.0.0,tls.enabled=true,tls.self_signed=true'", "--sink 'file:directory=/backup/logs,name=nodes'"]
+
+[[example]]
+text = "send /var/log/app/payments.log to collector.example.com over tls with my client certificate /etc/lw/me.crt and key /etc/lw/me.key"
+flags = ["--pipeline 'payments-mtls'", "--source 'file:directory=/var/log/app,pattern=payments.log'", "--sink 'tcp_chain:host=collector.example.com,port=9000,tls.enabled=true,tls.cert_file=/etc/lw/me.crt,tls.key_file=/etc/lw/me.key,auth.type=mtls'"]
+
+[[example]]
+text = "print my piped logs as json lines to the screen"
+flags = ["--pipeline 'pipe-json'", "--source 'console'", "--format 'json'", "--sink 'console'"]
+
+[[example]]
+text = "Follow /var/log/redis/redis-server.log from the beginning and serve it over TCP on port 6380 for 172.20.0.0/16"
+flags = ["--pipeline 'redis-tcp-acl'", "--source 'file:directory=/var/log/redis,pattern=redis-server.log,from=start'", "--sink 'tcp:port=6380,host=0.0.0.0,acl.allow=172.20.0.0/16'"]
+
+[[example]]
+text = "what's the capital of France"
+flags = []
+
+[[example]]
+text = "test the setup with random entries every second to the terminal"
+flags = ["--pipeline 'random-term'", "--source 'random:interval_ms=1000'", "--sink 'console'"]
+
+[[example]]
+text = "forward the files in /var/log/k8s matching *.log to the aggregator at 192.0.2.50 port 9000 as user k8s with the password file /etc/lw/k8s.pass over tls"
+flags = ["--pipeline 'k8s-scram'", "--source 'file:directory=/var/log/k8s,pattern=*.log'", "--sink 'tcp_chain:host=192.0.2.50,port=9000,tls.enabled=true,auth.type=scram,auth.username=k8s,auth.password_file=/etc/lw/k8s.pass'"]
+
+[[example]]
+text = "keep only WARN lines from /var/log/cron and write them to /var/log/filtered in files named cron"
+flags = ["--pipeline 'cron-warn-files'", "--source 'file:directory=/var/log,pattern=cron'", "--filter 'include:patterns=WARN'", "--sink 'file:directory=/var/log/filtered,name=cron'"]
+
+[[example]]
+text = "watch the file /var/log/mail.err and copy it into /srv/archive as files called mail"
+flags = ["--pipeline 'mail-errors-file'", "--source 'file:directory=/var/log,pattern=mail.err'", "--sink 'file:directory=/srv/archive,name=mail'"]
+
+[[example]]
+text = "show all logs from the folder /var/log/caddy in a web viewer that other machines on the network can open, port 8088"
+flags = ["--pipeline 'folder-browser-lan'", "--source 'file:directory=/var/log/caddy'", "--sink 'http:port=8088,host=0.0.0.0'"]
+
+[[example]]
+text = "forward what I pipe in to the node hub.example.net port 9000 over TLS pinned to sha256//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg="
+flags = ["--pipeline 'stdin-chain-tls-pin'", "--source 'console'", "--sink 'tcp_chain:host=hub.example.net,port=9000,tls.enabled=true,tls.pin_sha256=sha256//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg='"]
+
+[[example]]
+text = "send /var/log/nginx/access.log to the terminal and /var/log/nginx/error.log to a tcp stream on port 9095 for this machine"
+flags = ["--pipeline 'two-files-two-sinks'", "--source 'file:directory=/var/log/nginx,pattern=access.log'", "--sink 'console'", "--pipeline 'two-files-two-sinks-2'", "--source 'file:directory=/var/log/nginx,pattern=error.log'", "--sink 'tcp:port=9095,host=127.0.0.1'"]
+
+[[example]]
+text = "read /var/log/flood.log from the beginning, at most 50 lines a second, and print them"
+flags = ["--pipeline 'rate-limit-file'", "--source 'file:directory=/var/log,pattern=flood.log,from=start'", "--rate-limit 'entries_per_second=50'", "--sink 'console'"]
+
+[[example]]
+text = "serve /var/log/vpn.log as a tcp stream on 9443 for 10.8.0.0/24 over tls with the certificate /etc/lw/vpn.crt and key /etc/lw/vpn.key"
+flags = ["--pipeline 'listener-own-cert'", "--source 'file:directory=/var/log,pattern=vpn.log'", "--sink 'tcp:port=9443,host=0.0.0.0,tls.enabled=true,tls.cert_file=/etc/lw/vpn.crt,tls.key_file=/etc/lw/vpn.key,acl.allow=10.8.0.0/24'"]
+
+[[example]]
+text = "follow everything in /opt/svc/log but drop lines with DEBUG or TRACE, show the rest on stderr"
+flags = ["--pipeline 'exclude-two'", "--source 'file:directory=/opt/svc/log'", "--filter 'exclude:patterns=DEBUG,patterns=TRACE'", "--sink 'console:target=stderr'"]
+
+[[example]]
+text = "post the entries of /var/log/app/app.json to the collector 192.0.2.77 over http on port 8081 in batches"
+flags = ["--pipeline 'http-chain-plain'", "--source 'file:directory=/var/log/app,pattern=app.json'", "--sink 'http_chain:host=192.0.2.77,port=8081'"]
+
+[[example]]
+text = "give me a recipe for pancakes"
+flags = []
+
+[[example]]
+text = "print /var/log/syslog.1 as plain text lines with time and level"
+flags = ["--pipeline 'txt-format'", "--source 'file:directory=/var/log,pattern=syslog.1'", "--format 'txt'", "--sink 'console'"]

@@ -77,14 +77,15 @@ func defaults() Config {
 func main() {
 	path := flag.String("c", "/usr/local/etc/llmgate/llmgate.toml", "configuration file")
 	check := flag.Bool("check", false, "load the configuration and the apps, print them and exit")
+	eval := flag.String("eval", "", "draft lwdescribe's eval FILE with the configured model, compare, and exit")
 	flag.Parse()
-	if err := run(*path, *check); err != nil {
+	if err := run(*path, *check, *eval); err != nil {
 		fmt.Fprintln(os.Stderr, "llmgate:", err)
 		os.Exit(1)
 	}
 }
 
-func run(path string, check bool) error {
+func run(path string, check bool, eval string) error {
 	cfg, err := load(path)
 	if err != nil {
 		return err
@@ -99,24 +100,38 @@ func run(path string, check bool) error {
 	}
 	var apps []gate.App
 	var summaries []string
+	var describe *lwdescribe.App
 	if cfg.Apps.LWDescribe.Enabled {
 		a, err := lwdescribe.New(cfg.Apps.LWDescribe)
 		if err != nil {
 			return fmt.Errorf("lwdescribe: %w", err)
 		}
-		apps, summaries = append(apps, a), append(summaries, a.Summary())
+		apps, summaries, describe = append(apps, a), append(summaries, a.Summary()), a
 	}
 	for _, a := range apps {
 		if err := a.Admission().Check(); err != nil {
 			return fmt.Errorf("%s: %w", a.Name(), err)
 		}
 	}
-	if check {
+	m := &model.Ollama{URL: cfg.Model.URL, Model: cfg.Model.Name, Context: cfg.Model.Context, Threads: cfg.Model.Threads,
+		Client: &http.Client{}}
+	if cfg.Model.Think != "" {
+		on := cfg.Model.Think == "on"
+		m.Think = &on
+	}
+	if check || eval != "" {
 		fmt.Printf("configuration ok: %s, model %s at %s\n", path, cfg.Model.Name, cfg.Model.URL)
 		for _, s := range summaries {
 			fmt.Println(s)
 		}
+	}
+	switch {
+	case check:
 		return nil
+	case eval != "" && describe == nil:
+		return errors.New("-eval: lwdescribe is not enabled")
+	case eval != "":
+		return describe.Eval(context.Background(), m, eval, cfg.Line.Deadline, os.Stdout)
 	}
 	ops, err := logger(cfg, "llmgate")
 	if err != nil {
@@ -130,12 +145,6 @@ func run(path string, check bool) error {
 		review.Shutdown(5 * time.Second)
 		ops.Shutdown(5 * time.Second)
 	}()
-	m := &model.Ollama{URL: cfg.Model.URL, Model: cfg.Model.Name, Context: cfg.Model.Context, Threads: cfg.Model.Threads,
-		Client: &http.Client{}}
-	if cfg.Model.Think != "" {
-		on := cfg.Model.Think == "on"
-		m.Think = &on
-	}
 	s := gate.New(gate.Config{Proxies: proxies, MaxBody: cfg.MaxBody, Deadline: cfg.Line.Deadline,
 		Heartbeat: cfg.Line.Heartbeat, Waiting: cfg.Line.Waiting, Health: cfg.Model.Health}, m, apps, ops, review)
 

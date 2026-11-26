@@ -63,7 +63,7 @@ for f in llm llmgate; do
 	put 0555 "$src/usr/local/etc/rc.d/$f" "usr/local/etc/rc.d/$f"
 done
 put 0644 "$src/usr/local/etc/newsyslog.conf.d/llm.conf" usr/local/etc/newsyslog.conf.d/llm.conf
-for f in prompt.md examples.toml guide.md; do
+for f in prompt.md examples.toml guide.md eval.toml; do
 	put 0644 "$src/usr/local/etc/llmgate/lwdescribe/$f" "usr/local/etc/llmgate/lwdescribe/$f"
 done
 put 0644 "$tmp/etc/llmgate.toml" "$conf"
