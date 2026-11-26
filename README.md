@@ -23,6 +23,7 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 - `apps/lwdescribe/`: the first app
 - `jail/`: a Bastille template laid out as the jail: `Bastillefile`, rc.d,
   ipfw, newsyslog, the configuration and the app's prompt, examples and guide
+- `deploy/update.sh`: a running jail brought up to this checkout
 
 ## The HTTP contract
 
@@ -186,13 +187,26 @@ jq -c 'select(.fields.outcome != "done") | .fields' requests.log
 jq -r 'select(.fields.refused) | .fields | .text + "\n" + .flags + "\n" + .problems + "\n"' requests.log
 ```
 
+## Updating
+
+As the checkout's owner, then as root on the jail's host; the script works
+from its own checkout, wherever that is:
+
+```sh
+git pull && make jail
+deploy/update.sh            # -j JAIL for a jail not named llm
+```
+
+It renders `llmgate.toml` and `ipfw.rules` from this checkout with the
+installed `llmgate.toml`'s `listen`, `proxies` and `model.name`, and runs the
+new llmgate's `-check` on them, the new `lw` and assets and the jail's
+`llmgate_env` before it installs anything. Then it installs what differs,
+restarts ipfw or llm when their files changed and llmgate after any change,
+and waits for the gate to open. A new LogWisp engine for the drafts is the
+same: `make jail` from its checkout, then the script.
+
 ## Operating
 
-- A new LogWisp engine for the drafts: `make lw` from its checkout, then, on
-  the jail's host,
-  `install -o root -g wheel -m 0555 jail/usr/local/bin/lw "$(jls -j llm path)/usr/local/bin/"`
-  and `bastille service llm llmgate restart`, or the template copied and
-  applied again. Until then the gate checks drafts against the older language.
 - A new model: `bastille cmd llm ollama pull NAME`, then
   `LLMGATE_MODEL_NAME=NAME` in `llmgate_env` and llmgate restarted; it warms
   the model before answering.

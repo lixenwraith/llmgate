@@ -20,13 +20,13 @@ func TestOllamaChatsAlikeAndReportsACut(t *testing.T) {
 	}))
 	defer srv.Close()
 	off := false
-	o := &Ollama{URL: srv.URL, Model: "m", Context: 6144, Threads: 4, Think: &off, Client: srv.Client()}
+	o := &Ollama{URL: srv.URL, Model: "m", Context: 10240, Threads: 4, Think: &off, Client: srv.Client()}
 	a, err := o.Chat(context.Background(), Request{Messages: []Message{{"user", "hi"}}, Format: json.RawMessage(`{"type":"object"}`), MaxTokens: 320})
 	if !errors.Is(err, ErrCut) || a.PromptTokens != 12 || a.AnswerTokens != 8 {
 		t.Errorf("a cut answer: %+v, %v", a, err)
 	}
 	opts, _ := got["options"].(map[string]any)
-	for k, want := range map[string]any{"temperature": 0.0, "top_k": 1.0, "num_ctx": 6144.0, "num_thread": 4.0, "num_predict": 320.0} {
+	for k, want := range map[string]any{"temperature": 0.0, "top_k": 1.0, "num_ctx": 10240.0, "num_thread": 4.0, "num_predict": 320.0} {
 		if opts[k] != want {
 			t.Errorf("options.%s = %v, want %v", k, opts[k], want)
 		}

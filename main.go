@@ -66,7 +66,7 @@ type Config struct {
 func defaults() Config {
 	var c Config
 	c.Listen, c.Admin, c.Proxies, c.MaxBody = "127.0.0.1:8888", "127.0.0.1:8889", []string{"127.0.0.1"}, 8<<10
-	c.Model.URL, c.Model.Name, c.Model.Context, c.Model.Threads = "http://127.0.0.1:11434", "qwen3:1.7b", 6144, 4
+	c.Model.URL, c.Model.Name, c.Model.Context, c.Model.Threads = "http://127.0.0.1:11434", "qwen3:1.7b", 10240, 4
 	c.Model.Think, c.Model.Health = "off", 15*time.Second
 	c.Line.Waiting, c.Line.Deadline, c.Line.Heartbeat = 6, 150*time.Second, 10*time.Second
 	c.Log.Directory, c.Log.Level, c.Log.MaxSizeMB, c.Log.MaxTotalMB, c.Log.RetentionDays = "/var/log/llmgate", "info", 10, 500, 14
