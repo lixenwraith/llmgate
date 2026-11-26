@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 type Message struct {
@@ -33,7 +32,6 @@ type Answer struct {
 	Content      string
 	PromptTokens int
 	AnswerTokens int
-	Took         time.Duration
 }
 
 // ErrCut is an answer stopped at its token limit, never used as a partial
@@ -77,11 +75,10 @@ func (o *Ollama) Chat(ctx context.Context, r Request) (Answer, error) {
 		PromptEvalCount int    `json:"prompt_eval_count"`
 		EvalCount       int    `json:"eval_count"`
 	}
-	start := time.Now()
 	if err := o.call(ctx, http.MethodPost, "/api/chat", body, &out); err != nil {
 		return Answer{}, err
 	}
-	a := Answer{out.Message.Content, out.PromptEvalCount, out.EvalCount, time.Since(start)}
+	a := Answer{out.Message.Content, out.PromptEvalCount, out.EvalCount}
 	if out.DoneReason == "length" {
 		return a, ErrCut
 	}

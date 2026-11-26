@@ -57,19 +57,19 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 ## Build
 
 The jail runs two static binaries built for freebsd/amd64, on any machine
-with Go 1.27.4 and make (FreeBSD: `pkg install go127`), the jail's host
-among them; nothing is built in the jail:
+with Go 1.27.4 and GNU make 4 or BSD make (FreeBSD: `pkg install go127`),
+the jail's host among them; nothing is built in the jail:
 
 - `llmgate`, from this repository.
 - `lw`, from LogWisp. lwdescribe checks every draft with it, so it is built
-  in the LogWisp checkout the page's engine is built from: `LOGWISP`, by
+  in the LogWisp checkout of the engine the drafts are for: `LOGWISP`, by
   default `../logwisp`, a checkout beside this one. Given `SCHEMA`, that
   engine's `schema.json`, `lw --schema` must match it byte for byte.
 
 ```sh
 make jail [LOGWISP=../logwisp] [SCHEMA=path/to/schema.json]
 make check      # gofmt, vet, tests; the examples through lw once make lw ran
-make testdata   # the tests' schema, from that lw, when LogWisp's changes
+make testdata   # the tests' schema, from that lw, when LogWisp's schema changes
 ```
 
 The binaries land in `jail/usr/local/bin/`, beside the template's files.
@@ -77,11 +77,14 @@ The binaries land in `jail/usr/local/bin/`, beside the template's files.
 ## The jail
 
 One VNET jail with the two services as nologin users: `llm` runs Ollama,
-`llmgate` the gate. The template is `jail/` with the two binaries in it; copy
-it into Bastille's templates directory (`bastille_templatesdir`, by default
-`/usr/local/bastille/templates`) as `llmgate/jail`:
+`llmgate` the gate, each under daemon(8) as root, which holds the pidfile and
+Ollama's log. The template, for Bastille 1.4 or later, is `jail/` with the two
+binaries in it; copy it into Bastille's templates directory
+(`bastille_templatesdir`, by default `/usr/local/bastille/templates`) as
+`llmgate/jail`, with rsync from packages:
 
 ```sh
+mkdir -p /usr/local/bastille/templates/llmgate
 rsync -a --delete jail/ /usr/local/bastille/templates/llmgate/jail/   # or root@HOST: from elsewhere
 ```
 
@@ -105,10 +108,11 @@ template is applied, and through rc.conf after:
 - Anything else: `LLMGATE_` variables over `llmgate.toml`, by path, in the
   jail's rc.conf: `bastille sysrc llm llmgate_env="LLMGATE_MODEL_THREADS=6"`.
 
-The template installs `ollama`, creates the users, copies the files, renders
-`/etc/ipfw.rules` and `llmgate.toml`, enables ipfw and both services, and
-pulls `MODEL`, outbound through the host's NAT. It can be applied again; it
-overwrites the files it copies.
+The template loads the jail's ipfw rules first (a new VNET may drop
+everything until they load), installs `ollama`, creates the users, copies the
+files and renders `llmgate.toml`, enables both services and pulls `MODEL`,
+outbound through the host's NAT. It can be applied again: it stops llmgate,
+overwrites the files it copies and starts both services again.
 
 - Memory: rctl caps the jail, the model's memory with it, once the host
   runs with racct: `sysctl kern.racct.enable` says 1. Else
@@ -123,7 +127,7 @@ Check it:
 ```sh
 bastille cmd llm service llmgate check          # configuration ok, examples checked
 bastille cmd llm fetch -qo - http://127.0.0.1:8889/  # ready, model, waiting, outcomes
-fetch -qo - http://JAIL_ADDR:8888/lwdescribe    # from the proxy's host: engine, limits, model
+fetch -qo - http://JAIL_ADDR:8888/lwdescribe    # from NGINX_ADDR, the one source ipfw admits
 ```
 
 ## The proxy
@@ -164,13 +168,14 @@ location /PREFIX/ {
 - `/var/log/llmgate/llmgate.log`: operations (start, the model up or down,
   warm-ups); `[log]` keeps 10 MB files, 500 MB, 14 days
 - `/var/log/llmgate/requests.log`: one JSON record a request; as above
-- `/var/log/llm/llm.log`: Ollama's own output; newsyslog keeps 10 MB, 7 files
+- `/var/log/llm.log`: Ollama's own output; newsyslog keeps 10 MB, 7 files
 - `/var/log/messages`: llmgate refusing to start or crashing, the jail's syslog
 
 A request record: `id` (the one the page shows), `app`, `client` (an HMAC of
 the address under a key that lives in memory, new each start, so a client is
 one name within a UTC day and a restart), `outcome`
-(`done|error|timeout|left|refused`), `code`, `queue_ms`, `run_ms`, and the
+(`done|error|timeout|left|refused`), `code`, `error` (an error outcome's
+cause), `queue_ms`, `run_ms`, and the
 app's own: lwdescribe adds `calls`, `prompt_tokens`, `answer_tokens`,
 `declined`, `refused` and, with `record_text`, `text`, `flags`, `problems`
 and `refused_drafts` (each draft a repair replaced, with lw's words).
@@ -183,11 +188,11 @@ jq -r 'select(.fields.refused) | .fields | .text + "\n" + .flags + "\n" + .probl
 
 ## Operating
 
-- A new LogWisp engine on the page: `make lw` again, the template copied to
-  the server again, then
-  `bastille cp llm /usr/local/bastille/templates/llmgate/jail/usr/local/bin/lw /usr/local/bin/lw`
-  and `bastille service llm llmgate restart`, or the template applied again.
-  Until then the gate checks drafts against the older language.
+- A new LogWisp engine for the drafts: `make lw` from its checkout, then, on
+  the jail's host,
+  `install -o root -g wheel -m 0555 jail/usr/local/bin/lw "$(jls -j llm path)/usr/local/bin/"`
+  and `bastille service llm llmgate restart`, or the template copied and
+  applied again. Until then the gate checks drafts against the older language.
 - A new model: `bastille cmd llm ollama pull NAME`, then
   `LLMGATE_MODEL_NAME=NAME` in `llmgate_env` and llmgate restarted; it warms
   the model before answering.
@@ -197,10 +202,11 @@ jq -r 'select(.fields.refused) | .fields | .text + "\n" + .flags + "\n" + .probl
 - Faster: a smaller model (`qwen3:0.6b`, about three times as fast as
   `qwen3:1.7b`, with more mistakes) or fewer examples (a shorter prefix to
   warm, the same speed after).
-- `record_text = false` keeps the numbers alone.
-- Constrained output fails on the model server (the warm-up logs it): set
-  `constrain = "array"` in `[apps.lwdescribe]`; the language and `lw --dump`
-  still check every draft.
+- `LLMGATE_APPS_LWDESCRIBE_RECORD_TEXT=false` in `llmgate_env` keeps the
+  numbers alone.
+- Constrained output fails on the model server (the warm-up logs it):
+  `LLMGATE_APPS_LWDESCRIBE_CONSTRAIN=array` in `llmgate_env`; the language and
+  `lw --dump` still check every draft.
 
 ## Adding an app
 

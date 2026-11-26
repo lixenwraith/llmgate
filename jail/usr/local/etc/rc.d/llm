@@ -19,20 +19,22 @@ load_rc_config $name
 : ${llm_enable:="NO"}
 : ${llm_models:="/var/db/llm/models"}
 
-# rc.subr runs the supervisor as llm_user with llm_env; it reopens the log
-# on SIGHUP (newsyslog) and restarts Ollama if it dies. One model, one
-# request at a time, kept loaded, on loopback alone; no GPU, no cloud models
-# or web search. No OLLAMA_DEBUG_LOG_REQUESTS: it writes requests out.
-llm_user=llm
+# daemon(8) stays root and runs Ollama as llm, so the pidfile root reads and
+# the log newsyslog rotates are root's; it reopens the log on SIGHUP. One
+# model, one request at a time, kept loaded, on loopback alone; no GPU, no
+# cloud models or web search. No OLLAMA_DEBUG_LOG_REQUESTS: it logs requests.
 llm_env="HOME=/var/db/llm OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=${llm_models} OLLAMA_NUM_PARALLEL=1 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_KEEP_ALIVE=-1 OLLAMA_VULKAN=0 OLLAMA_NO_CLOUD=1 ${llm_env}"
-pidfile=/var/run/llm/llm.pid
+pidfile=/var/run/llm.pid
 command=/usr/sbin/daemon
-command_args="-r -R 10 -H -P ${pidfile} -o /var/log/llm/llm.log -t ${name} /usr/local/bin/ollama serve"
+command_args="-r -R 10 -H -u llm -P ${pidfile} -o /var/log/llm.log -t ${name} /usr/local/bin/ollama serve"
 start_precmd=llm_prestart
 
+# root makes only llm's home, in its own /var/db; llm makes what is under
+# it, so root never follows a link llm could have planted
 llm_prestart()
 {
-	install -d -o llm -g llm -m 0750 /var/db/llm ${llm_models} /var/run/llm /var/log/llm
+	install -d -o llm -g llm -m 0750 /var/db/llm
+	su -m llm -c "mkdir -p ${llm_models}"
 }
 
 run_rc_command "$1"

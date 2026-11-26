@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -110,7 +111,10 @@ func (s *Server) Run(ctx context.Context) {
 	tick := time.NewTicker(s.cfg.Health)
 	defer tick.Stop()
 	for {
-		err := s.model.Ready(ctx)
+		// a server that takes connections but never answers is down too
+		rctx, cancel := context.WithTimeout(ctx, s.cfg.Health)
+		err := s.model.Ready(rctx)
+		cancel()
 		switch {
 		case err != nil && s.ready.Swap(false):
 			s.ops.Warn("model server down; apps closed", "model", s.model.Name(), "error", err.Error())
@@ -173,7 +177,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		limits := func(l Limits) map[string]any {
 			return map[string]any{"burst": l.Burst, "every_s": l.Refill.Seconds(), "daily": l.Daily}
 		}
-		info := maps.Clone(a.Info())
+		info := map[string]any{}
+		maps.Copy(info, a.Info())
 		info["model"], info["waiting"] = s.model.Name(), s.line.length()
 		info["limits"] = map[string]any{"client": limits(a.client.Limits), "app": limits(a.app.Limits)}
 		w.Header().Set("Content-Type", "application/json")
@@ -228,7 +233,7 @@ func (s *Server) post(w http.ResponseWriter, r *http.Request, a *served) {
 		ref(&Refusal{http.StatusServiceUnavailable, "unavailable"})
 		return
 	}
-	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
 		ref(&Refusal{http.StatusUnsupportedMediaType, "unsupported_media_type"})
 		return
 	}
@@ -318,6 +323,7 @@ func (s *Server) post(w http.ResponseWriter, r *http.Request, a *served) {
 			send(event{"event": "running"})
 		case <-ctx.Done():
 			<-done // the model call ends with its context
+			rec["run_ms"] = (time.Since(arrived) - queued).Milliseconds()
 			stop()
 			return
 		case res := <-done:

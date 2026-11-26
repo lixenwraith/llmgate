@@ -29,10 +29,15 @@ func (r *Refusal) Error() string { return r.Code }
 // ErrText is the refusal of a text Clean will not take
 var ErrText = &Refusal{http.StatusBadRequest, "text_invalid"}
 
+// Hidden is what hides text from a reader but not from a model: format
+// characters (zero-width, bidi, the tag block), variation selectors, private
+// use and controls
+func Hidden(r rune) bool {
+	return unicode.In(r, unicode.Cf, unicode.Co, unicode.Variation_Selector) || unicode.IsControl(r)
+}
+
 // Clean keeps letters, marks, numbers, punctuation, symbols, single spaces
-// and at most maxLines lines. It drops what hides text from a reader but not
-// from a model: format characters (zero-width, bidi, the tag block),
-// variation selectors, private use and controls.
+// and at most maxLines lines, and drops what is Hidden
 func Clean(s string, maxRunes, maxLines int) (string, error) {
 	if !utf8.ValidString(s) {
 		return "", ErrText
@@ -50,7 +55,7 @@ func Clean(s string, maxRunes, maxLines int) (string, error) {
 			if len(b) > 0 && b[len(b)-1] != ' ' && b[len(b)-1] != '\n' {
 				b = append(b, ' ')
 			}
-		case unicode.In(r, unicode.Cf, unicode.Co, unicode.Variation_Selector) || unicode.IsControl(r):
+		case Hidden(r):
 		case unicode.IsPrint(r):
 			b = utf8.AppendRune(b, r)
 		}
@@ -151,12 +156,14 @@ func (l *limiter) refund(key string) {
 	defer l.mu.Unlock()
 	if b := l.buckets[key]; b != nil {
 		b.tokens = min(float64(l.Burst), b.tokens+1)
-		b.today = max(0, b.today-1)
+		if b.today = max(0, b.today-1); b.today == 0 {
+			delete(l.buckets, key) // as if never seen: the map holds only keys that spent
+		}
 	}
 }
 
 // clientKey is who a request counts against: the address a trusted proxy
-// read from the PROXY header, else the peer's; an IPv6 one by its /64, which
+// sent in X-Real-IP, else the peer's; an IPv6 one by its /64, which
 // one host may roam
 func clientKey(r *http.Request, proxies []netip.Addr) string {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)

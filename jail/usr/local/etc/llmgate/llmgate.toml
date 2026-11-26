@@ -45,7 +45,7 @@ console = false
 
 [apps.lwdescribe]
 enabled = true
-# lw built from the LogWisp the page's engine is built from (make lw).
+# lw built from the LogWisp of the engine the drafts are for (make lw).
 lw = "/usr/local/bin/lw"
 assets = "/usr/local/etc/llmgate/lwdescribe"
 work_dir = "/var/empty"
@@ -62,7 +62,7 @@ record_text = true
 
 [apps.lwdescribe.limits.client]
 # Each visitor's own: a burst, the time one more comes back, and drafts a
-# UTC day. The page states them; the guide is the way to more.
+# UTC day. A page states them; the guide is the way to more.
 burst = 1
 refill = "10s"
 daily = 20

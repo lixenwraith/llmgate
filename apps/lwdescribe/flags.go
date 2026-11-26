@@ -6,7 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"unicode"
+
+	"github.com/lixenwraith/llmgate/gate"
 )
 
 // The flag language the model writes, built from lw --schema: one pattern a
@@ -90,7 +91,30 @@ func ordered(keys []key, listening bool) (must, may []leaf) {
 	return append(must, host...), append(may, tables...)
 }
 
-func listens(p plugin) bool { return p.Side == "listener" || p.Side == "chain_listener" }
+// sideOf is a plugin's side as the catalog names it; a side that listens has
+// its host required (ordered)
+var sideOf = map[string]string{"listener": "listens", "chain_listener": "listens", "dialer": "dials"}
+
+func listens(p plugin) bool { return sideOf[p.Side] == "listens" }
+
+// kindOf is a key kind's value pattern and its word in the catalog; any
+// other kind is free text
+var kindOf = map[string]struct{ re, word string }{
+	"bool": {"(true|false)", "true|false"}, "integer": {intRE, "int"}, "number": {numRE, "num"},
+}
+
+// stageKeys splits a flow stage's keys: its types, when it has a type key,
+// and the rest
+func stageKeys(keys []key) (types []string, rest []key) {
+	for _, k := range keys {
+		if k.Key == "type" {
+			types = k.Enum
+		} else {
+			rest = append(rest, k)
+		}
+	}
+	return types, rest
+}
 
 // flagPattern is one line the language takes, as a regexp of Go's and as the
 // JSON Schema pattern of the same text
@@ -130,15 +154,7 @@ func newLanguage(data []byte) (*language, error) {
 		if !ok {
 			return nil, fmt.Errorf("lw --schema: flow stage %q has no flag here", st.Key)
 		}
-		var types []string
-		var rest []key
-		for _, k := range st.Keys {
-			if k.Key == "type" {
-				types = k.Enum
-			} else {
-				rest = append(rest, k)
-			}
-		}
+		types, rest := stageKeys(st.Keys)
 		must, may := ordered(rest, false)
 		if types == nil {
 			l.add(flag, pairs(must, may))
@@ -204,22 +220,16 @@ func tail(ls []leaf) string {
 // pair is key=value, a list's key repeated for each entry; "\x00" marks
 // where the dialect's free-text class goes
 func pair(lf leaf) string {
-	var v string
-	switch {
-	case len(lf.Enum) > 0:
+	v := "\x00"
+	if k, ok := kindOf[lf.Kind]; ok {
+		v = k.re
+	}
+	if len(lf.Enum) > 0 {
 		var es []string
 		for _, e := range lf.Enum {
 			es = append(es, regexp.QuoteMeta(e))
 		}
 		v = "(" + strings.Join(es, "|") + ")"
-	case lf.Kind == "bool":
-		v = "(true|false)"
-	case lf.Kind == "integer":
-		v = intRE
-	case lf.Kind == "number":
-		v = numRE
-	default:
-		v = "\x00"
 	}
 	p := regexp.QuoteMeta(lf.path) + "=" + v
 	if lf.Kind == "list" {
@@ -256,7 +266,7 @@ func (l *language) jsonSchema(mode string) (json.RawMessage, error) {
 // order and no character a terminal or reader would hide
 func (l *language) check(flags []string) string {
 	for i, f := range flags {
-		if strings.ContainsFunc(f, func(r rune) bool { return unicode.In(r, unicode.Cf, unicode.Co) || unicode.IsControl(r) }) {
+		if strings.ContainsFunc(f, gate.Hidden) {
 			return fmt.Sprintf("line %d holds a control or format character", i+1)
 		}
 		if i == 0 && !l.patterns[0].re.MatchString(f) {
@@ -282,7 +292,10 @@ func catalog(s schema) string {
 	section := func(title, flag string, plugins []plugin) {
 		fmt.Fprintf(&b, "%s, --%s 'TYPE[:key=value,...]':\n", title, flag)
 		for _, p := range plugins {
-			side := map[string]string{"listener": " (listens)", "chain_listener": " (listens)", "dialer": " (dials)"}[p.Side]
+			side := ""
+			if s := sideOf[p.Side]; s != "" {
+				side = " (" + s + ")"
+			}
 			must, may := ordered(p.Keys, listens(p))
 			var entries []string
 			for _, lf := range append(must, may...) {
@@ -317,14 +330,10 @@ func catalog(s schema) string {
 	section("Sinks", "sink", s.Sinks)
 	b.WriteString("Flow, each optional, in this order:\n")
 	for _, st := range s.Flow {
+		enum, rest := stageKeys(st.Keys)
 		types := ""
-		var rest []key
-		for _, k := range st.Keys {
-			if k.Key == "type" {
-				types = strings.Join(k.Enum, "|") + ":"
-			} else {
-				rest = append(rest, k)
-			}
+		if enum != nil {
+			types = strings.Join(enum, "|") + ":"
 		}
 		must, may := ordered(rest, false)
 		var ks []string
@@ -347,7 +356,7 @@ func catalog(s schema) string {
 // keyEntry is one key for the catalog: name=KIND, then whether it repeats
 // and its default or that it is required
 func keyEntry(path string, k key) string {
-	kind := map[string]string{"integer": "int", "number": "num", "bool": "true|false"}[k.Kind]
+	kind := kindOf[k.Kind].word
 	if hint := map[string]string{"dir": "DIR", "file": "FILE", "glob": "GLOB", "regex": "RE2", "cidr": "CIDR", "host": "HOST", "path": "/PATH"}[k.Hint]; hint != "" {
 		kind = hint
 	}
