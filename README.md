@@ -57,7 +57,8 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 ## Build
 
 The jail runs two static binaries built for freebsd/amd64, on any machine
-with Go 1.27.4 and make; nothing is built on the server:
+with Go 1.27.4 and make (FreeBSD: `pkg install go127`), the jail's host
+among them; nothing is built in the jail:
 
 - `llmgate`, from this repository.
 - `lw`, from LogWisp. lwdescribe checks every draft with it, so it is built
@@ -81,7 +82,7 @@ it into Bastille's templates directory (`bastille_templatesdir`, by default
 `/usr/local/bastille/templates`) as `llmgate/jail`:
 
 ```sh
-rsync -a --delete jail/ root@SERVER:/usr/local/bastille/templates/llmgate/jail/
+rsync -a --delete jail/ /usr/local/bastille/templates/llmgate/jail/   # or root@HOST: from elsewhere
 ```
 
 On the server, create the jail as the other VNET jails on the jails' bridge
