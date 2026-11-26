@@ -23,7 +23,8 @@ browser ── proxy /PREFIX/NAME ──> llmgate JAIL:8888 ──> Ollama 127.0
 - `apps/lwdescribe/`: the first app
 - `jail/`: a Bastille template laid out as the jail: `Bastillefile`, rc.d,
   ipfw, newsyslog, the configuration and the app's prompt, examples and guide
-- `deploy/update.sh`: a running jail brought up to this checkout
+- `deploy/`: `build.sh` pulls and builds as the checkouts' owner,
+  `update.sh` brings a running jail up to the build as root
 
 ## The HTTP contract
 
@@ -178,7 +179,7 @@ one name within a UTC day and a restart), `outcome`
 (`done|error|timeout|left|refused`), `code`, `error` (an error outcome's
 cause), `queue_ms`, `run_ms`, and the
 app's own: lwdescribe adds `calls`, `prompt_tokens`, `answer_tokens`,
-`declined`, `refused` and, with `record_text`, `text`, `flags`, `problems`
+`declined`, `refused`, `settled` (draft lines its code corrected) and, with `record_text`, `text`, `flags`, `problems`
 and `refused_drafts` (each draft a repair replaced, with lw's words).
 Reviewing, with jq on the host, under the jail's root:
 
@@ -189,21 +190,22 @@ jq -r 'select(.fields.refused) | .fields | .text + "\n" + .flags + "\n" + .probl
 
 ## Updating
 
-As the checkout's owner, then as root on the jail's host; the script works
+As the checkouts' owner, then as root on the jail's host; each script works
 from its own checkout, wherever that is:
 
 ```sh
-git pull && make jail
+deploy/build.sh             # LOGWISP=DIR for a LogWisp not beside this one
 deploy/update.sh            # -j JAIL for a jail not named llm
 ```
 
-It renders `llmgate.toml` and `ipfw.rules` from this checkout with the
+build.sh fast-forwards this checkout and LogWisp's to their latest and runs
+`make jail`, `lw` stamped with its commit's time, so an unchanged LogWisp
+builds the same `lw`. update.sh renders `llmgate.toml` and `ipfw.rules` from this checkout with the
 installed `llmgate.toml`'s `listen`, `proxies` and `model.name`, and runs the
 new llmgate's `-check` on them, the new `lw` and assets and the jail's
 `llmgate_env` before it installs anything. Then it installs what differs,
 restarts ipfw or llm when their files changed and llmgate after any change,
-and waits for the gate to open. A new LogWisp engine for the drafts is the
-same: `make jail` from its checkout, then the script.
+and waits for the gate to open.
 
 ## Operating
 
