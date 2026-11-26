@@ -1,8 +1,11 @@
 package lwdescribe
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"net/netip"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -128,6 +131,16 @@ type language struct {
 	version  string
 	patterns []flagPattern
 	catalog  string
+	plugins  map[string]keyOrder // by "source file", "sink http", ...
+}
+
+// keyOrder is a plugin's keys in the language's order, whether it listens,
+// its keys that name a file, and its optional keys' defaults
+type keyOrder struct {
+	paths    []string
+	listens  bool
+	files    map[string]bool
+	defaults map[string]string
 }
 
 // flagOf names each flow stage's flag, the one table a new stage extends
@@ -138,7 +151,7 @@ func newLanguage(data []byte) (*language, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("lw --schema: %w", err)
 	}
-	l := &language{version: s.Version}
+	l := &language{version: s.Version, plugins: map[string]keyOrder{}}
 	l.add("pipeline", nameRE)
 	for _, set := range []struct {
 		flag    string
@@ -147,6 +160,15 @@ func newLanguage(data []byte) (*language, error) {
 		for _, p := range set.plugins {
 			must, may := ordered(p.Keys, listens(p))
 			l.add(set.flag, typed(p.Type, must, may))
+			o := keyOrder{listens: listens(p), files: map[string]bool{}, defaults: map[string]string{}}
+			for _, lf := range slices.Concat(must, may) {
+				o.paths = append(o.paths, lf.path)
+				o.files[lf.path] = lf.Hint == "file"
+				if !lf.Required && lf.Default != "" {
+					o.defaults[lf.path] = lf.Default
+				}
+			}
+			l.plugins[set.flag+" "+p.Type] = o
 		}
 	}
 	for _, st := range s.Flow {
@@ -233,7 +255,7 @@ func pair(lf leaf) string {
 	}
 	p := regexp.QuoteMeta(lf.path) + "=" + v
 	if lf.Kind == "list" {
-		return p + "(," + p + ")*"
+		return p + "(," + p + "){0,7}" // a model that loops on a list stops at 8
 	}
 	return p
 }
@@ -277,6 +299,175 @@ func (l *language) check(flags []string) string {
 		}
 	}
 	return ""
+}
+
+// settle holds a draft to its description, by code, where the answer is
+// one: values trimmed and defaults left out; a file the description names,
+// split into its folder and name; a file key, auth or TLS the description
+// gives no ground for, dropped; then TLS that scram or mtls need, a network
+// given as a listener's host admitted by acl, a client certificate's mtls
+// and a listener's certificate made. It returns the lines it changed.
+func (l *language) settle(flags []string, text string) ([]string, int) {
+	named, files := described(text)
+	secure := secureRE.MatchString(text)
+	out, n := slices.Clone(flags), 0
+	for i, f := range flags {
+		flag, typ, kv, ok := splitFlag(f)
+		o, known := l.plugins[flag+" "+typ]
+		if !ok || !known {
+			continue
+		}
+		before := slices.Clone(kv)
+		kv = slices.DeleteFunc(kv, func(p [2]string) bool {
+			return o.defaults[p[0]] == p[1] || o.files[p[0]] && !named[path.Clean(p[1])]
+		})
+		if flag == "source" && typ == "file" {
+			kv = groundFile(kv, files)
+		}
+		switch get(kv, "auth.type") {
+		case "scram":
+			if get(kv, "auth.credentials_file")+get(kv, "auth.password_file") == "" {
+				kv = drop(kv, "auth.")
+			}
+		case "mtls":
+			if get(kv, "tls.client_ca_file")+get(kv, "tls.key_file") == "" {
+				kv = drop(kv, "auth.")
+			}
+		}
+		if !secure && get(kv, "auth.type") == "" {
+			kv = drop(kv, "tls.")
+		}
+		if a := get(kv, "auth.type"); (a == "scram" || a == "mtls") && get(kv, "tls.enabled") != "true" {
+			kv = set(kv, "tls.enabled", "true")
+		}
+		if h := get(kv, "host"); o.listens && strings.Contains(h, "/") {
+			if p, err := netip.ParsePrefix(h); err == nil {
+				all := "0.0.0.0"
+				if p.Addr().Is6() {
+					all = "::"
+				}
+				if kv = set(kv, "host", all); !slices.Contains(kv, [2]string{"acl.allow", h}) {
+					kv = append(kv, [2]string{"acl.allow", h})
+				}
+			}
+		}
+		if !o.listens && get(kv, "auth.type") == "" && get(kv, "tls.cert_file") != "" && get(kv, "tls.key_file") != "" {
+			kv = set(kv, "auth.type", "mtls")
+		}
+		if o.listens && get(kv, "tls.enabled") == "true" &&
+			get(kv, "tls.cert_file")+get(kv, "tls.self_signed")+get(kv, "tls.issuer_cert_file") == "" {
+			kv = set(kv, "tls.self_signed", "true")
+		}
+		if !slices.Equal(kv, before) {
+			out[i], n = render(flag, typ, kv, o.paths), n+1
+		}
+	}
+	return out, n
+}
+
+// groundFile puts a file the description names where lw reads it: a
+// directory that is the file, or a folder the model made up for its name
+func groundFile(kv [][2]string, files map[string]bool) [][2]string {
+	dir, pattern := path.Clean(get(kv, "directory")), get(kv, "pattern")
+	if files[dir] {
+		return set(set(kv, "directory", path.Dir(dir)), "pattern", path.Base(dir))
+	}
+	if pattern == "" || files[path.Join(dir, pattern)] {
+		return kv
+	}
+	var match []string
+	for f := range files {
+		if path.Base(f) == pattern {
+			match = append(match, f)
+		}
+	}
+	if len(match) == 1 {
+		return set(kv, "directory", path.Dir(match[0]))
+	}
+	return kv
+}
+
+var (
+	pathRE     = regexp.MustCompile("/[^\\s'\"`(),;]+")
+	extRE      = regexp.MustCompile(`[^/.]\.[A-Za-z][A-Za-z0-9]{1,7}$`)
+	fileWordRE = regexp.MustCompile("(?i)\\bfile[\\s:]+['\"`]?$")
+	secureRE   = regexp.MustCompile(`(?i)\b(tls|ssl|https|secure\w*|encrypt\w*|cert\w*|mtls|mutual)\b`)
+)
+
+// described are the absolute paths a description names, and of them the
+// files: with an extension (app.log, not 1.2 or conf.d), or after "file"
+func described(text string) (named, files map[string]bool) {
+	named, files = map[string]bool{}, map[string]bool{}
+	for _, m := range pathRE.FindAllStringIndex(text, -1) {
+		p := strings.TrimRight(text[m[0]:m[1]], ".:!?")
+		named[path.Clean(p)] = true
+		if !strings.ContainsAny(p, "*?[") && (extRE.MatchString(p) || fileWordRE.MatchString(text[:m[0]])) {
+			files[path.Clean(p)] = true
+		}
+	}
+	return named, files
+}
+
+// drop removes the keys under a table, "auth." or "tls."
+func drop(kv [][2]string, table string) [][2]string {
+	return slices.DeleteFunc(slices.Clone(kv), func(p [2]string) bool { return strings.HasPrefix(p[0], table) })
+}
+
+// splitFlag is a line's flag, type and pairs, as the language writes them
+func splitFlag(line string) (flag, typ string, kv [][2]string, ok bool) {
+	name, value, _ := strings.Cut(line, " ")
+	if !strings.HasPrefix(name, "--") || len(value) < 2 || value[0] != '\'' || value[len(value)-1] != '\'' {
+		return "", "", nil, false
+	}
+	typ, rest, _ := strings.Cut(value[1:len(value)-1], ":")
+	for p := range strings.SplitSeq(rest, ",") {
+		if p == "" {
+			continue
+		}
+		k, v, found := strings.Cut(p, "=")
+		if !found {
+			return "", "", nil, false
+		}
+		kv = append(kv, [2]string{k, strings.TrimSpace(v)})
+	}
+	return name[2:], typ, kv, true
+}
+
+// render writes the pairs back in the language's order, a key it does not
+// know last, for the check to refuse
+func render(flag, typ string, kv [][2]string, order []string) string {
+	at := func(k string) int {
+		if i := slices.Index(order, k); i >= 0 {
+			return i
+		}
+		return len(order)
+	}
+	slices.SortStableFunc(kv, func(a, b [2]string) int { return cmp.Compare(at(a[0]), at(b[0])) })
+	var ps []string
+	for _, p := range kv {
+		ps = append(ps, p[0]+"="+p[1])
+	}
+	if len(ps) == 0 {
+		return "--" + flag + " '" + typ + "'"
+	}
+	return "--" + flag + " '" + typ + ":" + strings.Join(ps, ",") + "'"
+}
+
+func get(kv [][2]string, key string) string {
+	if i := slices.IndexFunc(kv, func(p [2]string) bool { return p[0] == key }); i >= 0 {
+		return kv[i][1]
+	}
+	return ""
+}
+
+// set gives key its value, in place when the key is there
+func set(kv [][2]string, key, value string) [][2]string {
+	kv = slices.Clone(kv)
+	if i := slices.IndexFunc(kv, func(p [2]string) bool { return p[0] == key }); i >= 0 {
+		kv[i][1] = value
+		return kv
+	}
+	return append(kv, [2]string{key, value})
 }
 
 // catalog is the language for the model to read: each type with its keys

@@ -34,7 +34,8 @@ func testLanguage(t *testing.T) *language {
 	return l
 }
 
-// With LW set to an lw binary, New also holds each example to lw --dump.
+// Examples are drafts settle leaves as they are; with LW set to an lw
+// binary, New also holds each to lw --dump.
 func TestExamplesAreDraftsTheModelMayWriteAndLWTakes(t *testing.T) {
 	l := testLanguage(t)
 	var model []*regexp.Regexp
@@ -48,6 +49,9 @@ func TestExamplesAreDraftsTheModelMayWriteAndLWTakes(t *testing.T) {
 	for i, e := range examples {
 		if p := l.check(e.Flags); p != "" {
 			t.Errorf("example %d: %s", i+1, p)
+		}
+		if settled, n := l.settle(e.Flags, e.Text); n > 0 {
+			t.Errorf("example %d teaches what settle would change: %v", i+1, settled)
 		}
 		for _, f := range e.Flags {
 			if !slices.ContainsFunc(model, func(re *regexp.Regexp) bool { return re.MatchString(f) }) {
@@ -288,5 +292,41 @@ func TestTheGuideTeachesTheLanguageAsLines(t *testing.T) {
 	}
 	if !strings.Contains(app.prefix[0].Content, gateAnswer) || strings.Contains(app.prefix[0].Content, guideAnswer) {
 		t.Error("the model's own prompt asks for the guide's answer")
+	}
+}
+
+// settle applies the defaults with one answer and leaves every other line
+func TestSettleAppliesTheDefaultsWithOneAnswer(t *testing.T) {
+	l := testLanguage(t)
+	for _, c := range []struct{ text, in, want string }{
+		{"forward /var/log/daemon.log to x", "--source 'file:directory=/var/log/daemon.log'",
+			"--source 'file:directory=/var/log,pattern=daemon.log'"},
+		{"stream a file /var/log/dmesg from the start", "--source 'file:directory=/var/log/dmesg,pattern=*.log,from=start'",
+			"--source 'file:directory=/var/log,pattern=dmesg,from=start'"},
+		{"forward /var/log/daemon.log to x", "--source 'file:directory=/var/log/daemon,pattern=daemon.log'",
+			"--source 'file:directory=/var/log,pattern=daemon.log'"},
+		{"everything in /var/log/postgresql", "--source 'file:directory=/var/log/postgresql'",
+			"--source 'file:directory=/var/log/postgresql'"},
+		{"everything in /opt/app-1.2", "--source 'file:directory=/opt/app-1.2'", "--source 'file:directory=/opt/app-1.2'"},
+		{"https for 10.0.0.0/8", "--sink 'http:port=9443,host=10.0.0.0/8,tls.enabled=true'",
+			"--sink 'http:port=9443,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,acl.allow=10.0.0.0/8'"},
+		{"users from /u", "--source 'tcp_chain:port=9000,host=0.0.0.0,auth.type=scram,auth.credentials_file=/u'",
+			"--source 'tcp_chain:port=9000,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/u'"},
+		{"over tls", "--sink 'tcp_chain:host=n,port=9000,tls.enabled=true'", "--sink 'tcp_chain:host=n,port=9000,tls.enabled=true'"},
+		{"with my cert /c and key /k", "--sink 'http:port=1,host=::,tls.enabled=true,tls.cert_file=/c,tls.key_file=/k'",
+			"--sink 'http:port=1,host=::,tls.enabled=true,tls.cert_file=/c,tls.key_file=/k'"},
+		{"everything under /var/log/remote from the start", "--source 'file:directory=/var/log/remote,pattern=* ,from=start'",
+			"--source 'file:directory=/var/log/remote,from=start'"},
+		{"to node n on port 9100 in a chain", "--sink 'tcp_chain:host=n,port=9100,tls.enabled=true,auth.type=scram,auth.username=system,auth.password_file=/dev/null'",
+			"--sink 'tcp_chain:host=n,port=9100'"},
+		{"as k8s with the password file /etc/k8s.pass over tls", "--sink 'tcp_chain:host=n,port=9000,tls.enabled=true,tls.cert_file=/k.crt,tls.key_file=/k.key,tls.ca_file=/ca.crt,auth.type=scram,auth.username=k8s,auth.password_file=/etc/k8s.pass'",
+			"--sink 'tcp_chain:host=n,port=9000,tls.enabled=true,auth.type=scram,auth.username=k8s,auth.password_file=/etc/k8s.pass'"},
+		{"over tls with my client certificate /c and key /k", "--sink 'tcp_chain:host=n,port=9000,tls.enabled=true,tls.cert_file=/c,tls.key_file=/k'",
+			"--sink 'tcp_chain:host=n,port=9000,tls.enabled=true,tls.cert_file=/c,tls.key_file=/k,auth.type=mtls'"},
+	} {
+		got, n := l.settle([]string{"--pipeline 'a'", c.in}, c.text)
+		if got[1] != c.want || (n == 1) != (c.in != c.want) || got[0] != "--pipeline 'a'" {
+			t.Errorf("%s\n got %s (%d changed)\nwant %s", c.in, got[1], n, c.want)
+		}
 	}
 }
