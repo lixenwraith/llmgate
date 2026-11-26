@@ -92,6 +92,14 @@ text = "Serve /var/log/secure as a TCP stream over TLS on port 9090 to 10.1.0.0/
 flags = ["--pipeline 'secure'", "--source 'file:directory=/var/log,pattern=secure'", "--sink 'tcp:port=9090,host=0.0.0.0,tls.enabled=true,tls.self_signed=true,auth.type=scram,auth.credentials_file=/etc/logwisp/readers.toml,acl.allow=10.1.0.0/16,acl.deny=10.1.5.0/24'"]
 
 [[example]]
+text = "Read standard input and serve it over TCP on port 9091 to the network, dropping lines with DEBUG."
+flags = ["--pipeline 'stdin'", "--source 'console'", "--filter 'exclude:patterns=DEBUG'", "--sink 'tcp:port=9091,host=0.0.0.0'"]
+
+[[example]]
+text = "Print /var/log/syslog on the terminal, and send /var/log/auth.log to the node at 192.0.2.30 in a chain."
+flags = ["--pipeline 'syslog'", "--source 'file:directory=/var/log,pattern=syslog'", "--sink 'console'", "--pipeline 'auth'", "--source 'file:directory=/var/log,pattern=auth.log'", "--sink 'tcp_chain:host=192.0.2.30,port=9000'"]
+
+[[example]]
 text = "Show ERROR lines from /var/log/app on the terminal, and copy everything in /var/log/db to files named db under /var/log/archive."
 flags = ["--pipeline 'errors'", "--source 'file:directory=/var/log/app'", "--filter 'include:patterns=ERROR'", "--sink 'console'", "--pipeline 'db'", "--source 'file:directory=/var/log/db'", "--sink 'file:directory=/var/log/archive,name=db'"]
 

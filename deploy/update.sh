@@ -74,6 +74,7 @@ if [ "$changed" = " " ]; then
 	exit 0
 fi
 echo "$jail: installed$changed"
+case $changed in *" usr/local/bin/lw "*) echo "$jail: lw now $("$root/usr/local/bin/lw" --version)" ;; esac
 case $changed in *" etc/ipfw.rules "*) jexec -l "$jail" service ipfw restart ;; esac
 case $changed in *" usr/local/etc/rc.d/llm "*) jexec -l "$jail" service llm restart ;; esac
 jexec -l "$jail" service llmgate restart

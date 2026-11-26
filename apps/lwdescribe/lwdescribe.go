@@ -1,7 +1,7 @@
 // Package lwdescribe drafts LogWisp pipelines from a visitor's description:
-// lw flags under a JSON Schema built from lw --schema, checked by lw --dump
-// of the LogWisp the page's engine is built from, and repaired with lw's own
-// words. The page then parses and validates the draft with that engine.
+// lw flags under a JSON Schema built from lw --schema, settled against the
+// description, checked by lw --dump of the LogWisp the page's engine is built
+// from, and repaired with lw's own words. The page then validates the draft.
 package lwdescribe
 
 import (
@@ -230,6 +230,7 @@ type task struct {
 	problems string
 	refused  []map[string]string // drafts before a repair, with lw's words
 	declined bool
+	settled  int // lines settle changed
 	calls    int
 	prompt   int
 	answer   int
@@ -255,6 +256,9 @@ func (t *task) Run(ctx context.Context, m model.Model) (map[string]any, error) {
 			t.declined, t.flags, t.problems = true, nil, ""
 			return map[string]any{"declined": true}, nil
 		}
+		var n int
+		out.Flags, n = t.app.lang.settle(out.Flags, t.text)
+		t.settled += n
 		// a draft the check refuses for a hidden character is kept escaped, so
 		// neither the page nor a terminal reading the review log acts on it
 		t.flags = slices.Clone(out.Flags)
@@ -289,7 +293,7 @@ func answerJSON(s string) string {
 
 func (t *task) Record() map[string]any {
 	r := map[string]any{"calls": t.calls, "prompt_tokens": t.prompt, "answer_tokens": t.answer,
-		"declined": t.declined, "refused": t.problems != ""}
+		"declined": t.declined, "refused": t.problems != "", "settled": t.settled}
 	if t.app.cfg.RecordText {
 		r["text"], r["flags"], r["problems"] = t.text, strings.Join(t.flags, "\n"), t.problems
 		if len(t.refused) > 0 {
